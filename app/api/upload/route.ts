@@ -52,6 +52,22 @@ export async function POST(req: NextRequest) {
         { auth: { persistSession: false } }
       );
 
+      // Auto-create the bucket as PUBLIC if it doesn't exist yet
+      const { data: existingBucket } = await supabase.storage.getBucket('images');
+      if (!existingBucket) {
+        const { error: createErr } = await supabase.storage.createBucket('images', {
+          public: true,
+          fileSizeLimit: 5 * 1024 * 1024,
+        });
+        if (createErr) {
+          console.error('Failed to create images bucket:', createErr);
+          return NextResponse.json({ error: 'Storage not configured: ' + createErr.message }, { status: 500 });
+        }
+      } else if (!existingBucket.public) {
+        // Bucket exists but is private — make it public so URLs work
+        await supabase.storage.updateBucket('images', { public: true });
+      }
+
       const storagePath = `${folder}/${filename}`;
       const { error: uploadError } = await supabase.storage
         .from('images')
@@ -69,6 +85,7 @@ export async function POST(req: NextRequest) {
         .from('images')
         .getPublicUrl(storagePath);
 
+      console.log('Upload success:', storagePath, '→', publicUrl);
       return NextResponse.json({ url: publicUrl, filename });
     } else {
       // ── Local filesystem (development / SQLite) ─────────────────────────────
