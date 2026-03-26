@@ -23,7 +23,7 @@ export async function fetchJSON<T = unknown>(
 
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
-    // Silently return null — likely a redirect or empty response, not a real error
+    console.error(`[fetchJSON] non-JSON response from ${url}: status=${res.status} content-type="${contentType}" finalUrl="${finalUrl}"`);
     return null;
   }
 
