@@ -28,7 +28,7 @@ export const Confetti = forwardRef<ConfettiHandle>(function Confetti(_, ref) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const pieces       = useRef<Piece[]>([]);
   const rafRef       = useRef<number>(0);
-  const startLoopRef = useRef<() => void>();
+  const startLoopRef = useRef<(() => void) | undefined>(undefined);
 
   const spawnAt = useCallback((cx: number, cy: number, count = 60) => {
     for (let i = 0; i < count; i++) {
