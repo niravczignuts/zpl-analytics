@@ -282,20 +282,38 @@ export default function PlayersPage() {
                       {p.purchase_price > 0 && (
                         <p className="text-xs text-[#FFD700] font-bold mt-1">{formatCurrency(p.purchase_price)}</p>
                       )}
-                      {/* Compact rating display */}
-                      {ratingsMap[p.id] && (ratingsMap[p.id].batting_stars != null || ratingsMap[p.id].bowling_stars != null) && (
-                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                          {ratingsMap[p.id].batting_stars != null && (
-                            <span className="text-[9px] text-[#FFD700]/70">🏏{'★'.repeat(ratingsMap[p.id].batting_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].batting_stars!)}</span>
-                          )}
-                          {ratingsMap[p.id].bowling_stars != null && (
-                            <span className="text-[9px] text-[#FFD700]/70">🎳{'★'.repeat(ratingsMap[p.id].bowling_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].bowling_stars!)}</span>
-                          )}
-                        </div>
-                      )}
+                      {/* Compact rating display OR rate prompt */}
+                      <div className="mt-1.5">
+                        {ratingsMap[p.id] && (ratingsMap[p.id].batting_stars != null || ratingsMap[p.id].bowling_stars != null || ratingsMap[p.id].fielding_stars != null) ? (
+                          <button
+                            onClick={e => { e.stopPropagation(); setRatingPopupId(p.id); }}
+                            className="w-full text-left space-y-0.5"
+                            title="Edit ratings"
+                          >
+                            {ratingsMap[p.id].batting_stars != null && (
+                              <div className="text-[9px] text-[#FFD700]/80 leading-tight">🏏 {'★'.repeat(ratingsMap[p.id].batting_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].batting_stars!)}</div>
+                            )}
+                            {ratingsMap[p.id].bowling_stars != null && (
+                              <div className="text-[9px] text-[#FFD700]/80 leading-tight">🎳 {'★'.repeat(ratingsMap[p.id].bowling_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].bowling_stars!)}</div>
+                            )}
+                            {ratingsMap[p.id].fielding_stars != null && (
+                              <div className="text-[9px] text-[#FFD700]/80 leading-tight">🤸 {'★'.repeat(ratingsMap[p.id].fielding_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].fielding_stars!)}</div>
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={e => { e.stopPropagation(); setRatingPopupId(p.id); }}
+                            className="text-[9px] text-muted-foreground/50 hover:text-[#FFD700]/70 transition-colors flex items-center gap-0.5"
+                            title="Add rating"
+                          >
+                            ☆ Rate player
+                          </button>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 </button>
+                {/* Edit button — hover only on desktop */}
                 <button
                   onClick={e => openEdit(p, e)}
                   className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus:opacity-100 w-6 h-6 rounded-md bg-background/90 border border-border/60 flex items-center justify-center text-muted-foreground hover:text-[#FFD700] hover:border-[#FFD700]/30 transition-all z-10"
@@ -303,23 +321,6 @@ export default function PlayersPage() {
                 >
                   <Pencil className="w-3 h-3" />
                 </button>
-                {/* Rate button */}
-                <button
-                  onClick={e => { e.stopPropagation(); setRatingPopupId(ratingPopupId === p.id ? null : p.id); }}
-                  className="absolute bottom-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-background/90 border border-border/60 text-[#FFD700]/70 hover:text-[#FFD700] hover:border-[#FFD700]/30 transition-all z-10 text-[10px] font-medium"
-                  title="Rate this player"
-                >
-                  ★ Rate
-                </button>
-                {/* Rating popup */}
-                {ratingPopupId === p.id && (
-                  <PlayerRatingPopup
-                    playerId={p.id}
-                    playerName={`${p.first_name} ${p.last_name}`}
-                    onClose={() => setRatingPopupId(null)}
-                    onSaved={data => { handleRatingSaved(p.id, data); }}
-                  />
-                )}
               </div>
             ))}
             {filtered.length === 0 && (
@@ -582,6 +583,16 @@ export default function PlayersPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Rating Popup (page-level so it's never clipped) ── */}
+      {ratingPopupId && (
+        <PlayerRatingPopup
+          playerId={ratingPopupId}
+          playerName={(() => { const p = players.find(x => x.id === ratingPopupId); return p ? `${p.first_name} ${p.last_name}` : ''; })()}
+          onClose={() => setRatingPopupId(null)}
+          onSaved={data => { handleRatingSaved(ratingPopupId, data); setRatingPopupId(null); }}
+        />
       )}
 
       {/* ── Quick Edit Modal ── */}
