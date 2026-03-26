@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { fetchJSON } from '@/lib/fetch';
 import { useSeason } from '@/components/providers/SeasonProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,10 +51,10 @@ export default function TeamRolesPage() {
     setLoadingPlayers(true);
 
     Promise.all([
-      fetch(`/api/teams?season_id=${seasonId}`).then(r => r.json()),
-      fetch(`/api/players?season_id=${seasonId}`).then(r => r.json()),
-      fetch('/api/admin/team-roles').then(r => r.json()),
-    ]).then(([teamsData, playersData, defaults]: [any[], RegisteredPlayer[], { team: string; captain: string; manager: string }[]]) => {
+      fetchJSON<any[]>(`/api/teams?season_id=${seasonId}`),
+      fetchJSON<RegisteredPlayer[]>(`/api/players?season_id=${seasonId}`),
+      fetchJSON<{ team: string; captain: string; manager: string }[]>('/api/admin/team-roles'),
+    ]).then(([teamsData, playersData, defaults]) => {
       // Build roles rows from actual DB teams
       const rows: TeamRole[] = (Array.isArray(teamsData) ? teamsData : []).map((t: any) => {
         // Try to find a matching default suggestion by loose name comparison

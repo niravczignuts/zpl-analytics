@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { fetchJSON } from '@/lib/fetch';
 import { useSeason } from '@/components/providers/SeasonProvider';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -56,8 +57,7 @@ export default function PlayersPage() {
     const params = new URLSearchParams({ season_id: currentSeasonId });
     if (search) params.set('search', search);
     if (roleFilter) params.set('player_role', roleFilter);
-    fetch(`/api/players?${params}`)
-      .then(r => r.json())
+    fetchJSON<any[]>(`/api/players?${params}`)
       .then(d => { setPlayers(Array.isArray(d) ? d : []); setLoading(false); })
       .catch(() => setLoading(false));
   }, [currentSeasonId, search, roleFilter]);
@@ -68,9 +68,8 @@ export default function PlayersPage() {
     setDetailLoading(true);
     setAddingNote(false);
     setNoteText('');
-    fetch(`/api/players/${selectedId}`)
-      .then(r => r.json())
-      .then(d => { setDetail(d); setDetailLoading(false); })
+    fetchJSON(`/api/players/${selectedId}`)
+      .then(d => { if (d) setDetail(d); setDetailLoading(false); })
       .catch(() => setDetailLoading(false));
   }, [selectedId]);
 
@@ -84,8 +83,8 @@ export default function PlayersPage() {
         body: JSON.stringify({ remark: noteText, remark_type: noteType, season_id: currentSeasonId }),
       });
       // Refresh detail
-      const d = await fetch(`/api/players/${selectedId}`).then(r => r.json());
-      setDetail(d);
+      const d = await fetchJSON(`/api/players/${selectedId}`);
+      if (d) setDetail(d);
       setNoteText('');
       setAddingNote(false);
     } catch (e) {

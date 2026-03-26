@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { fetchJSON } from '@/lib/fetch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -215,7 +216,7 @@ export default function MatchDetailPage() {
       setInnings(data.innings || []);
       setUploadSuccess(true);
       // Refresh match status (may have been set to completed)
-      fetch(`/api/matches/${id}`).then(r => r.json()).then(d => setMatch(d)).catch(() => {});
+      fetchJSON(`/api/matches/${id}`).then(d => { if (d) setMatch(d); }).catch(() => {});
     } catch (e: any) {
       setUploadError(e.message);
     } finally {

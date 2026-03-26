@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { fetchJSON } from '@/lib/fetch';
 import { useSeason } from '@/components/providers/SeasonProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,15 +23,14 @@ export default function ComparePage() {
 
   useEffect(() => {
     if (!currentSeasonId) return;
-    fetch(`/api/teams?season_id=${currentSeasonId}`)
-      .then(r => r.json())
+    fetchJSON<any[]>(`/api/teams?season_id=${currentSeasonId}`)
       .then(d => { setTeams(Array.isArray(d) ? d : []); setTeamsLoading(false); })
       .catch(() => setTeamsLoading(false));
   }, [currentSeasonId]);
 
   const loadTeam = async (teamId: string, setter: (v: any) => void) => {
     if (!teamId) { setter(null); return; }
-    const data = await fetch(`/api/teams/${teamId}?season_id=${currentSeasonId}`).then(r => r.json());
+    const data = await fetchJSON(`/api/teams/${teamId}?season_id=${currentSeasonId}`);
     setter(data);
   };
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { fetchJSON } from '@/lib/fetch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,9 +41,9 @@ export default function PlayerProfilePage() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`/api/players/${id}`).then(r => r.json()),
-      fetch('/api/seasons').then(r => r.json()),
-      fetch(`/api/players/${id}/match-history`).then(r => r.json()).catch(() => ({ batting: [], bowling: [] })),
+      fetchJSON(`/api/players/${id}`),
+      fetchJSON('/api/seasons'),
+      fetchJSON(`/api/players/${id}/match-history`).catch(() => ({ batting: [], bowling: [] })),
     ]).then(([playerData, seasonsData, historyData]) => {
       setPlayer(playerData);
       // Sort newest first so tabs default to most recent season
@@ -61,8 +62,9 @@ export default function PlayerProfilePage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ player_id: id }),
       });
-      const data = await res.json();
-      setAiAnalysis(data.analysis || '');
+      const contentType = res.headers.get('content-type') || '';
+      const data = contentType.includes('application/json') ? await res.json() : null;
+      setAiAnalysis(data?.analysis || '');
     } finally { setAiLoading(false); }
   };
 
@@ -74,8 +76,8 @@ export default function PlayerProfilePage() {
       body: JSON.stringify({ remark: newRemark, remark_type: remarkType }),
     });
     setNewRemark(''); setShowRemarkForm(false);
-    const fresh = await fetch(`/api/players/${id}`).then(r => r.json());
-    setPlayer(fresh);
+    const fresh = await fetchJSON(`/api/players/${id}`);
+    if (fresh) setPlayer(fresh);
     setAddingRemark(false);
   };
 
