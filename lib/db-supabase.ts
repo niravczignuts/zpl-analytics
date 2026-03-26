@@ -597,18 +597,33 @@ export class SupabaseDB {
   }
 
   async getSeasonLeaderboard(seasonId: string, statType: StatType): Promise<LeaderboardEntry[]> {
+    // Step 1: get stats + player name
     const { data, error } = await this.supabase
       .from('player_season_stats')
       .select(`
         *,
-        player:players!player_id(first_name, last_name),
-        auction:auction_purchases(team:teams!team_id(name, color_primary))
+        player:players!player_id(first_name, last_name)
       `)
       .eq('season_id', seasonId)
       .eq('stat_type', statType);
     if (error) throw new Error(error.message);
 
-    return (data ?? []).map((r: any) => {
+    if (!data || data.length === 0) return [];
+
+    // Step 2: fetch team info for these players via auction_purchases
+    const playerIds = data.map((r: any) => r.player_id);
+    const { data: purchases } = await this.supabase
+      .from('auction_purchases')
+      .select('player_id, team:teams!team_id(name, color_primary)')
+      .eq('season_id', seasonId)
+      .in('player_id', playerIds);
+
+    const teamByPlayer: Record<string, any> = {};
+    for (const ap of purchases ?? []) {
+      teamByPlayer[(ap as any).player_id] = (ap as any).team;
+    }
+
+    return data.map((r: any) => {
       const stats = JSON.parse(r.stats_json);
       let stat_value = 0;
       if (statType === 'batting') stat_value = stats.total_runs || 0;
@@ -617,8 +632,7 @@ export class SupabaseDB {
       if (statType === 'mvp') stat_value = stats.total_score || 0;
 
       const player = r.player;
-      const auctionArr = Array.isArray(r.auction) ? r.auction : (r.auction ? [r.auction] : []);
-      const team = auctionArr[0]?.team;
+      const team = teamByPlayer[r.player_id];
 
       return {
         player_id: r.player_id,
