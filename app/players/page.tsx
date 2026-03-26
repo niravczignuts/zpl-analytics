@@ -282,45 +282,30 @@ export default function PlayersPage() {
                       {p.purchase_price > 0 && (
                         <p className="text-xs text-[#FFD700] font-bold mt-1">{formatCurrency(p.purchase_price)}</p>
                       )}
-                      {/* Compact rating display OR rate prompt */}
-                      <div className="mt-1.5">
-                        {ratingsMap[p.id] && (ratingsMap[p.id].batting_stars != null || ratingsMap[p.id].bowling_stars != null || ratingsMap[p.id].fielding_stars != null) ? (
-                          <button
-                            onClick={e => { e.stopPropagation(); setRatingPopupId(p.id); }}
-                            className="w-full text-left space-y-0.5"
-                            title="Edit ratings"
-                          >
-                            {ratingsMap[p.id].batting_stars != null && (
-                              <div className="text-[9px] text-[#FFD700]/80 leading-tight">🏏 {'★'.repeat(ratingsMap[p.id].batting_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].batting_stars!)}</div>
-                            )}
-                            {ratingsMap[p.id].bowling_stars != null && (
-                              <div className="text-[9px] text-[#FFD700]/80 leading-tight">🎳 {'★'.repeat(ratingsMap[p.id].bowling_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].bowling_stars!)}</div>
-                            )}
-                            {ratingsMap[p.id].fielding_stars != null && (
-                              <div className="text-[9px] text-[#FFD700]/80 leading-tight">🤸 {'★'.repeat(ratingsMap[p.id].fielding_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].fielding_stars!)}</div>
-                            )}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={e => { e.stopPropagation(); setRatingPopupId(p.id); }}
-                            className="text-[9px] text-muted-foreground/50 hover:text-[#FFD700]/70 transition-colors flex items-center gap-0.5"
-                            title="Add rating"
-                          >
-                            ☆ Rate player
-                          </button>
-                        )}
-                      </div>
                     </CardContent>
                   </Card>
                 </button>
-                {/* Edit button — hover only on desktop */}
-                <button
-                  onClick={e => openEdit(p, e)}
-                  className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus:opacity-100 w-6 h-6 rounded-md bg-background/90 border border-border/60 flex items-center justify-center text-muted-foreground hover:text-[#FFD700] hover:border-[#FFD700]/30 transition-all z-10"
-                  title="Quick edit"
-                >
-                  <Pencil className="w-3 h-3" />
-                </button>
+                {/* Always-visible action buttons row */}
+                <div className="flex gap-1 mt-1 px-0.5">
+                  <button
+                    onClick={e => { e.stopPropagation(); setRatingPopupId(p.id); }}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-[10px] font-medium border transition-colors',
+                      ratingsMap[p.id] && (ratingsMap[p.id].batting_stars != null || ratingsMap[p.id].bowling_stars != null || ratingsMap[p.id].fielding_stars != null)
+                        ? 'bg-[#FFD700]/10 border-[#FFD700]/30 text-[#FFD700]'
+                        : 'bg-card border-border text-muted-foreground hover:border-[#FFD700]/30 hover:text-[#FFD700]/80'
+                    )}
+                  >
+                    ★ {ratingsMap[p.id]?.batting_stars != null || ratingsMap[p.id]?.bowling_stars != null || ratingsMap[p.id]?.fielding_stars != null ? 'Rated' : 'Rate'}
+                  </button>
+                  <button
+                    onClick={e => openEdit(p, e)}
+                    className="w-7 flex items-center justify-center py-1 rounded-md border border-border bg-card text-muted-foreground hover:border-[#FFD700]/30 hover:text-[#FFD700]/80 transition-colors"
+                    title="Quick edit"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             ))}
             {filtered.length === 0 && (
