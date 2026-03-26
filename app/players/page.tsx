@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { getRoleIcon, getRoleBadgeColor, formatCurrency } from '@/lib/calculations';
 import { cn } from '@/lib/utils';
-import { Search, Users, X, Loader2, ChevronRight, StickyNote, PlusCircle } from 'lucide-react';
+import { Search, Users, X, Loader2, ChevronRight, StickyNote, PlusCircle, Pencil } from 'lucide-react';
 import Link from 'next/link';
 
 interface Player {
@@ -50,6 +50,42 @@ export default function PlayersPage() {
   const [noteText, setNoteText] = useState('');
   const [noteType, setNoteType] = useState('general');
   const [savingNote, setSavingNote] = useState(false);
+
+  // Quick edit state
+  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', gender: '', player_role: '', batting_hand: '', bowling_style: '' });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editSaved, setEditSaved] = useState(false);
+
+  const openEdit = (p: Player, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditForm({
+      first_name: p.first_name, last_name: p.last_name, gender: p.gender || '',
+      player_role: p.player_role || '', batting_hand: p.batting_hand || '', bowling_style: p.bowling_style || '',
+    });
+    setEditingPlayer(p);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingPlayer) return;
+    setEditSaving(true);
+    try {
+      await fetch(`/api/players/${editingPlayer.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      setEditSaved(true);
+      // Update local state
+      setPlayers(prev => prev.map(p => p.id === editingPlayer.id ? { ...p, ...editForm } : p));
+      // Also update detail if open
+      if (detail && detail.id === editingPlayer.id) {
+        setDetail(prev => prev ? { ...prev, ...editForm } : prev);
+      }
+      setTimeout(() => { setEditSaved(false); setEditingPlayer(null); }, 800);
+    } catch (e) { console.error(e); }
+    finally { setEditSaving(false); }
+  };
 
   useEffect(() => {
     if (!currentSeasonId) return;
@@ -152,42 +188,50 @@ export default function PlayersPage() {
           {/* Player Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 content-start">
             {filtered.map(p => (
-              <button
-                key={p.id}
-                onClick={() => setSelectedId(selectedId === p.id ? null : p.id)}
-                className="text-left"
-              >
-                <Card className={cn(
-                  'bg-card border-border hover:border-[#FFD700]/40 hover:shadow-lg hover:shadow-[#FFD700]/5 transition-all cursor-pointer h-full',
-                  selectedId === p.id && 'border-[#FFD700]/60 shadow-lg shadow-[#FFD700]/10 ring-1 ring-[#FFD700]/30'
-                )}>
-                  {p.team_color && <div className="h-1 rounded-t-lg" style={{ backgroundColor: p.team_color }} />}
-                  <CardContent className="p-3">
-                    <div className="w-12 h-12 rounded-full bg-[#1B3A8C] flex items-center justify-center text-lg mb-2 overflow-hidden shrink-0 border border-white/10">
-                      {p.photo_url ? (
-                        <img src={p.photo_url} alt={`${p.first_name} ${p.last_name}`}
-                          className="w-full h-full object-cover" />
-                      ) : (
-                        <span>{p.gender === 'Female' ? '👩' : '👨'}</span>
-                      )}
-                    </div>
-                    <p className="font-semibold text-sm leading-tight mb-1">
-                      {p.first_name} {p.last_name}
-                    </p>
-                    {p.player_role && (
-                      <div className={cn('inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded mb-1', getRoleBadgeColor(p.player_role), 'text-white')}>
-                        {getRoleIcon(p.player_role)} {p.player_role}
+              <div key={p.id} className="relative group">
+                <button
+                  onClick={() => setSelectedId(selectedId === p.id ? null : p.id)}
+                  className="text-left w-full"
+                >
+                  <Card className={cn(
+                    'bg-card border-border hover:border-[#FFD700]/40 hover:shadow-lg hover:shadow-[#FFD700]/5 transition-all cursor-pointer h-full',
+                    selectedId === p.id && 'border-[#FFD700]/60 shadow-lg shadow-[#FFD700]/10 ring-1 ring-[#FFD700]/30'
+                  )}>
+                    {p.team_color && <div className="h-1 rounded-t-lg" style={{ backgroundColor: p.team_color }} />}
+                    <CardContent className="p-3">
+                      <div className="w-12 h-12 rounded-full bg-[#1B3A8C] flex items-center justify-center text-lg mb-2 overflow-hidden shrink-0 border border-white/10">
+                        {p.photo_url ? (
+                          <img src={p.photo_url} alt={`${p.first_name} ${p.last_name}`}
+                            className="w-full h-full object-cover" />
+                        ) : (
+                          <span>{p.gender === 'Female' ? '👩' : '👨'}</span>
+                        )}
                       </div>
-                    )}
-                    {p.team_name && (
-                      <p className="text-xs text-muted-foreground truncate">{p.team_name}</p>
-                    )}
-                    {p.purchase_price > 0 && (
-                      <p className="text-xs text-[#FFD700] font-bold mt-1">{formatCurrency(p.purchase_price)}</p>
-                    )}
-                  </CardContent>
-                </Card>
-              </button>
+                      <p className="font-semibold text-sm leading-tight mb-1">
+                        {p.first_name} {p.last_name}
+                      </p>
+                      {p.player_role && (
+                        <div className={cn('inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded mb-1', getRoleBadgeColor(p.player_role), 'text-white')}>
+                          {getRoleIcon(p.player_role)} {p.player_role}
+                        </div>
+                      )}
+                      {p.team_name && (
+                        <p className="text-xs text-muted-foreground truncate">{p.team_name}</p>
+                      )}
+                      {p.purchase_price > 0 && (
+                        <p className="text-xs text-[#FFD700] font-bold mt-1">{formatCurrency(p.purchase_price)}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </button>
+                <button
+                  onClick={e => openEdit(p, e)}
+                  className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus:opacity-100 w-6 h-6 rounded-md bg-background/90 border border-border/60 flex items-center justify-center text-muted-foreground hover:text-[#FFD700] hover:border-[#FFD700]/30 transition-all z-10"
+                  title="Quick edit"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              </div>
             ))}
             {filtered.length === 0 && (
               <div className="col-span-full text-center py-12 text-muted-foreground">
@@ -407,6 +451,105 @@ export default function PlayersPage() {
               ) : null}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Quick Edit Modal ── */}
+      {editingPlayer && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setEditingPlayer(null)}>
+          <div
+            className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
+              <div>
+                <h3 className="font-bold text-base text-foreground">Edit Player</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">{editingPlayer.first_name} {editingPlayer.last_name}</p>
+              </div>
+              <button onClick={() => setEditingPlayer(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">First Name</label>
+                  <Input value={editForm.first_name} onChange={e => setEditForm(p => ({ ...p, first_name: e.target.value }))}
+                    className="h-8 text-sm bg-background border-border" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Last Name</label>
+                  <Input value={editForm.last_name} onChange={e => setEditForm(p => ({ ...p, last_name: e.target.value }))}
+                    className="h-8 text-sm bg-background border-border" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Gender</label>
+                  <select value={editForm.gender} onChange={e => setEditForm(p => ({ ...p, gender: e.target.value }))}
+                    className="w-full h-8 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
+                    <option value="">Select</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Role</label>
+                  <select value={editForm.player_role} onChange={e => setEditForm(p => ({ ...p, player_role: e.target.value }))}
+                    className="w-full h-8 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
+                    <option value="">Select</option>
+                    <option>Batsman</option>
+                    <option>Bowler</option>
+                    <option>All-Rounder</option>
+                    <option>Wicketkeeper</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Batting Hand</label>
+                  <select value={editForm.batting_hand} onChange={e => setEditForm(p => ({ ...p, batting_hand: e.target.value }))}
+                    className="w-full h-8 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
+                    <option value="">Select</option>
+                    <option>Right</option>
+                    <option>Left</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Bowling Style</label>
+                  <select value={editForm.bowling_style} onChange={e => setEditForm(p => ({ ...p, bowling_style: e.target.value }))}
+                    className="w-full h-8 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
+                    <option value="">Select</option>
+                    <option>Right Arm Fast</option>
+                    <option>Right Arm Medium</option>
+                    <option>Right Arm Off Break</option>
+                    <option>Right Arm Leg Break</option>
+                    <option>Left Arm Fast</option>
+                    <option>Left Arm Medium</option>
+                    <option>Left Arm Orthodox</option>
+                    <option>Left Arm Chinaman</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-2 px-5 pb-5">
+              <Button variant="outline" className="flex-1 border-border" onClick={() => setEditingPlayer(null)}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-[#FFD700] text-black hover:bg-[#FFD700]/90 font-bold"
+                onClick={handleEditSave}
+                disabled={editSaving}
+              >
+                {editSaved ? '✓ Saved!' : editSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving…</> : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

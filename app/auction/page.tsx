@@ -1,5 +1,6 @@
 'use client';
 
+import { AIContent } from '@/components/ui/AIContent';
 import { useEffect, useState, useCallback } from 'react';
 import { useSeason } from '@/components/providers/SeasonProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -676,41 +677,32 @@ export default function AuctionPage() {
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                {/* Quick stats row */}
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  {selectedPlayer.batting && (
-                    <div className="bg-background/60 rounded-lg p-3 border border-border/60">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Batting</p>
-                      <p className="text-base font-bold text-blue-400">{selectedPlayer.batting.total_runs ?? '–'}</p>
-                      <p className="text-[10px] text-muted-foreground">Runs</p>
-                      {selectedPlayer.batting.average != null && (
-                        <p className="text-[10px] text-muted-foreground">Avg: {Number(selectedPlayer.batting.average).toFixed(1)}</p>
-                      )}
-                    </div>
-                  )}
-                  {selectedPlayer.bowling && (
-                    <div className="bg-background/60 rounded-lg p-3 border border-border/60">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Bowling</p>
-                      <p className="text-base font-bold text-red-400">{selectedPlayer.bowling.total_wickets ?? '–'}</p>
-                      <p className="text-[10px] text-muted-foreground">Wickets</p>
-                      {selectedPlayer.bowling.economy != null && (
-                        <p className="text-[10px] text-muted-foreground">Eco: {Number(selectedPlayer.bowling.economy).toFixed(2)}</p>
-                      )}
-                    </div>
-                  )}
-                  {selectedPlayer.mvp && (
-                    <div className="bg-background/60 rounded-lg p-3 border border-border/60">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">MVP Score</p>
-                      <p className="text-base font-bold text-[#FFD700]">{selectedPlayer.mvp.total_score?.toFixed(1) ?? '–'}</p>
-                      <p className="text-[10px] text-muted-foreground">Points</p>
-                    </div>
-                  )}
-                  {!selectedPlayer.batting && !selectedPlayer.bowling && !selectedPlayer.mvp && (
-                    <div className="col-span-3 text-center py-2 text-xs text-muted-foreground">
-                      No stats available for this season
-                    </div>
-                  )}
-                </div>
+                {/* Compact stats strip */}
+                {(selectedPlayer.batting || selectedPlayer.bowling || selectedPlayer.mvp) && (
+                  <div className="flex items-center gap-3 flex-wrap text-xs py-2 border-y border-border/40 mb-3">
+                    {selectedPlayer.batting && (
+                      <span className="text-blue-400 font-semibold">
+                        {selectedPlayer.batting.total_runs ?? 0}r
+                        <span className="text-muted-foreground font-normal ml-1">
+                          avg {Number(selectedPlayer.batting.average ?? 0).toFixed(1)} · SR {Number(selectedPlayer.batting.strike_rate ?? 0).toFixed(0)}
+                        </span>
+                      </span>
+                    )}
+                    {selectedPlayer.bowling && (
+                      <span className="text-red-400 font-semibold">
+                        {selectedPlayer.bowling.total_wickets ?? 0}w
+                        <span className="text-muted-foreground font-normal ml-1">
+                          eco {Number(selectedPlayer.bowling.economy ?? 0).toFixed(2)}
+                        </span>
+                      </span>
+                    )}
+                    {selectedPlayer.mvp && (
+                      <span className="text-[#FFD700] font-semibold">
+                        MVP {Number(selectedPlayer.mvp.total_score ?? 0).toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* ── Historical Performance / Notes ── */}
                 <div className="border-t border-border pt-3 space-y-3">
@@ -768,60 +760,43 @@ export default function AuctionPage() {
                     <p className="text-xs text-muted-foreground/60 italic">New player — no historical data or notes available.</p>
                   )}
 
-                  {/* ── Owner Ratings + Notes ── */}
-                  <div className="border border-border/50 rounded-xl p-3 space-y-3 bg-background/40">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Your Assessment</p>
-
-                    {/* Star Ratings */}
-                    {[
-                      { key: 'batting_stars' as const, label: '🏏 Batting' },
-                      { key: 'bowling_stars' as const, label: '🎳 Bowling' },
-                      { key: 'fielding_stars' as const, label: '🤸 Fielding' },
-                    ].map(({ key, label }) => (
-                      <div key={key} className="flex items-center gap-3">
-                        <span className="text-xs text-muted-foreground w-20 shrink-0">{label}</span>
-                        <div className="flex gap-1">
-                          {[1, 2, 3, 4, 5].map(star => (
-                            <button
-                              key={star}
-                              onClick={() => setOwnerData(prev => ({
-                                ...prev,
-                                [key]: prev[key] === star ? null : star,
-                              }))}
-                              className="text-base leading-none transition-transform hover:scale-110"
-                              title={`${star}/5`}
-                            >
-                              {(ownerData[key] ?? 0) >= star ? '★' : '☆'}
-                            </button>
-                          ))}
-                        </div>
-                        <span className="text-[10px] text-muted-foreground">
-                          {ownerData[key] != null ? `${ownerData[key]}/5` : '–'}
-                        </span>
+                  {/* ── Owner Assessment — compact ── */}
+                  <div className="flex items-center gap-2 px-2 py-1.5 bg-background/40 rounded-lg border border-border/50 flex-wrap">
+                    {/* Stars for each category */}
+                    {([
+                      { key: 'batting_stars' as const, icon: '🏏' },
+                      { key: 'bowling_stars' as const, icon: '🎳' },
+                      { key: 'fielding_stars' as const, icon: '🤸' },
+                    ] as const).map(({ key, icon }) => (
+                      <div key={key} className="flex items-center gap-0.5">
+                        <span className="text-[11px] mr-0.5">{icon}</span>
+                        {[1,2,3,4,5].map(s => (
+                          <button
+                            key={s}
+                            onClick={() => setOwnerData(prev => ({ ...prev, [key]: prev[key] === s ? null : s }))}
+                            onMouseDown={e => e.preventDefault()}
+                            className="text-[13px] leading-none text-[#FFD700] transition-transform active:scale-110 select-none"
+                          >
+                            {(ownerData[key] ?? 0) >= s ? '★' : '☆'}
+                          </button>
+                        ))}
                       </div>
                     ))}
-
-                    {/* Owner Note */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-muted-foreground">📝 My Note</label>
-                      <textarea
+                    {/* Divider */}
+                    <span className="text-border/60 text-xs">|</span>
+                    {/* Note input */}
+                    <div className="flex items-center gap-1 flex-1 min-w-[80px]">
+                      <span className="text-[10px] shrink-0">📝</span>
+                      <input
+                        type="text"
                         value={ownerData.owner_note}
-                        onChange={e => setOwnerData(prev => ({ ...prev, owner_note: e.target.value.slice(0, 500) }))}
+                        onChange={e => setOwnerData(prev => ({ ...prev, owner_note: e.target.value.slice(0, 200) }))}
                         onBlur={handleSaveOwnerData}
-                        placeholder='e.g. "max 50L", "must have", "avoid"…'
-                        rows={2}
-                        className="w-full text-xs bg-background/60 border border-border/60 rounded-md px-2.5 py-1.5 text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-[#FFD700]/50 placeholder:text-muted-foreground/40"
+                        placeholder="Note…"
+                        className="flex-1 min-w-0 text-[10px] bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground/40 focus:ring-0"
                       />
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-muted-foreground/50">{ownerData.owner_note.length}/500</span>
-                        <button
-                          onClick={handleSaveOwnerData}
-                          disabled={ownerDataSaving}
-                          className="text-[10px] px-2 py-0.5 rounded bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700]/20 transition-colors disabled:opacity-50"
-                        >
-                          {ownerDataSaved ? '✓ Saved' : ownerDataSaving ? 'Saving…' : 'Save'}
-                        </button>
-                      </div>
+                      {ownerDataSaved && <span className="text-[10px] text-green-400 shrink-0">✓</span>}
+                      {ownerDataSaving && <span className="text-[10px] text-muted-foreground shrink-0">…</span>}
                     </div>
                   </div>
 
@@ -875,10 +850,8 @@ export default function AuctionPage() {
                         </p>
                       )}
 
-                      {/* Reason */}
-                      {bidAdvice.reason && (
-                        <p className="text-xs text-foreground/85 leading-relaxed">{bidAdvice.reason}</p>
-                      )}
+                      {/* Reasoning */}
+                      {bidAdvice.reason && <AIContent text={bidAdvice.reason} />}
 
                       {/* Max bid + quick-fill */}
                       {bidAdvice.max_bid > 0 && (
@@ -898,24 +871,19 @@ export default function AuctionPage() {
                         </div>
                       )}
 
-                      {/* Squad fit */}
+                      {/* Key trade-off / squad fit */}
                       {bidAdvice.squad_fit && (
-                        <div className="bg-background/40 rounded-md px-2.5 py-2 border border-border/40">
-                          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Squad Fit</p>
-                          <p className="text-xs text-foreground/80">{bidAdvice.squad_fit}</p>
+                        <div className="bg-background/40 rounded-md px-2.5 py-1.5 border border-border/40">
+                          <p className="text-[10px] text-amber-400/80 font-semibold mb-0.5">⚖️ Trade-off</p>
+                          <AIContent text={bidAdvice.squad_fit} />
                         </div>
-                      )}
-
-                      {/* Value assessment */}
-                      {bidAdvice.value_assessment && (
-                        <p className="text-[10px] text-muted-foreground italic">{bidAdvice.value_assessment}</p>
                       )}
 
                       {/* Comparable players */}
                       {bidAdvice.comparable_players && (
-                        <div className="bg-background/40 rounded-md px-2.5 py-2 border border-border/40">
-                          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Comparable Players</p>
-                          <p className="text-xs text-foreground/70 whitespace-pre-line">{bidAdvice.comparable_players}</p>
+                        <div className="bg-background/40 rounded-md px-2.5 py-1.5 border border-border/40">
+                          <p className="text-[10px] text-muted-foreground font-semibold mb-0.5">🔁 Comparables</p>
+                          <AIContent text={bidAdvice.comparable_players} />
                         </div>
                       )}
 
@@ -936,8 +904,8 @@ export default function AuctionPage() {
                       {/* Budget impact */}
                       {bidAdvice.budget_impact && (
                         <div className="bg-background/40 rounded-md px-2.5 py-1.5 border border-border/40">
-                          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Budget Impact</p>
-                          <p className="text-xs text-foreground/70">{bidAdvice.budget_impact}</p>
+                          <p className="text-[10px] text-muted-foreground font-semibold mb-0.5">💰 Budget Impact</p>
+                          <AIContent text={bidAdvice.budget_impact} />
                         </div>
                       )}
                     </div>
@@ -1210,7 +1178,7 @@ export default function AuctionPage() {
                 return reason ? (
                   <div>
                     <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Reasoning</p>
-                    <p className="text-xs text-foreground/90 leading-relaxed">{reason}</p>
+                    <AIContent text={reason} />
                   </div>
                 ) : null;
               })()}
@@ -1245,7 +1213,7 @@ export default function AuctionPage() {
                 return (
                   <div className="space-y-1.5">
                     <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Team Balance</p>
-                    {assessment && <p className="text-xs text-foreground/80 leading-relaxed">{assessment}</p>}
+                    {assessment && <AIContent text={assessment} />}
                     {tb && (tb.batting_strength || tb.bowling_strength) && (
                       <div className="flex gap-2">
                         {tb.batting_strength && (
@@ -1275,9 +1243,7 @@ export default function AuctionPage() {
               {(aiSuggestion.budget_advice || aiSuggestion.strategy) && (
                 <div>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Budget Advice</p>
-                  <p className="text-xs text-foreground/80 leading-relaxed">
-                    {aiSuggestion.budget_advice || aiSuggestion.strategy}
-                  </p>
+                  <AIContent text={aiSuggestion.budget_advice || aiSuggestion.strategy || ''} />
                 </div>
               )}
 

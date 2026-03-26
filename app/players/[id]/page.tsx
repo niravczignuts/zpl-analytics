@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getRoleBadgeColor, getRoleIcon, formatCurrency } from '@/lib/calculations';
 import { cn } from '@/lib/utils';
 import { Sparkles, Loader2, Plus } from 'lucide-react';
+import { AIContent } from '@/components/ui/AIContent';
 import { Textarea } from '@/components/ui/textarea';
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip,
@@ -147,7 +148,7 @@ export default function PlayerProfilePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">{aiAnalysis}</p>
+            <AIContent text={aiAnalysis} className="text-sm" />
           </CardContent>
         </Card>
       )}
