@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { fetchJSON } from '@/lib/fetch';
 import { useSeason } from '@/components/providers/SeasonProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,11 +30,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!currentSeasonId) return;
     setLoading(true);
-    fetch(`/api/dashboard?season_id=${currentSeasonId}`)
-      .then(r => {
-        if (r.status === 401) { window.location.href = '/login'; return null; }
-        return r.json();
-      })
+    fetchJSON<DashboardData>(`/api/dashboard?season_id=${currentSeasonId}`)
       .then(d => { if (d) setData(d); })
       .catch(console.error)
       .finally(() => setLoading(false));

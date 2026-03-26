@@ -20,5 +20,12 @@ export async function fetchJSON<T = unknown>(
     return null;
   }
 
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    console.error(`fetchJSON: invalid JSON from ${url}:`, text.slice(0, 100));
+    return null;
+  }
 }
