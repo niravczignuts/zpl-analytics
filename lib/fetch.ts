@@ -14,9 +14,16 @@ export async function fetchJSON<T = unknown>(
     return null;
   }
 
+  // If redirected to login page (HTML), treat as 401
+  const finalUrl = res.url || '';
+  if (finalUrl.includes('/login')) {
+    window.location.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
+    return null;
+  }
+
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
-    console.error(`fetchJSON: expected JSON but got ${contentType} for ${url}`);
+    // Silently return null — likely a redirect or empty response, not a real error
     return null;
   }
 

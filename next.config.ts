@@ -3,8 +3,9 @@ import crypto from "crypto";
 
 const isDev = process.env.NODE_ENV === 'development';
 
-// Generated fresh on every server start — invalidates all existing sessions on restart
-const RUNTIME_TOKEN = crypto.randomUUID();
+// Use stable token from env so sessions survive server restarts.
+// Falls back to a random UUID only if APP_SESSION_TOKEN is not set.
+const RUNTIME_TOKEN = process.env.APP_SESSION_TOKEN || crypto.randomUUID();
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['better-sqlite3'],
