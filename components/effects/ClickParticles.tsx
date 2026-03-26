@@ -24,7 +24,7 @@ export function ClickParticles() {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const particles  = useRef<Particle[]>([]);
   const rafRef     = useRef<number>(0);
-  const animateRef = useRef<() => void>();
+  const animateRef = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
     const canvas = canvasRef.current;
