@@ -25,14 +25,22 @@ interface DashboardData {
 export default function DashboardPage() {
   const { currentSeasonId } = useSeason();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!currentSeasonId) return;
     setLoading(true);
+    setApiError(null);
     fetchJSON<DashboardData>(`/api/dashboard?season_id=${currentSeasonId}`)
-      .then(d => { if (d) setData(d); })
-      .catch(console.error)
+      .then(d => {
+        if (d && (d as any).error) {
+          setApiError((d as any).error);
+        } else if (d) {
+          setData(d);
+        }
+      })
+      .catch(e => setApiError(e?.message || 'Unknown error'))
       .finally(() => setLoading(false));
   }, [currentSeasonId]);
 
@@ -45,12 +53,16 @@ export default function DashboardPage() {
     </div>
   );
 
-  if (!data || (data as any).error) return (
+  if (apiError || !data) return (
     <div className="flex items-center justify-center h-full">
-      <div className="text-center">
+      <div className="text-center max-w-md">
         <p className="text-4xl mb-4">🏏</p>
         <h2 className="text-xl font-bold mb-2">No data found</h2>
-        <p className="text-muted-foreground mb-4">Copy your data files to data/seed/ and run:</p>
+        {apiError ? (
+          <p className="text-red-400 text-sm mb-4 font-mono bg-red-950/30 px-3 py-2 rounded">{apiError}</p>
+        ) : (
+          <p className="text-muted-foreground mb-4">Copy your data files to data/seed/ and run:</p>
+        )}
         <code className="bg-card px-3 py-2 rounded text-sm font-mono block">npx tsx scripts/seed.ts</code>
       </div>
     </div>

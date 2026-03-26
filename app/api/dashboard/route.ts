@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
 
     return dashboardData(db, seasonId);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    console.error('[dashboard] error:', e);
+    return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
   }
 }
 
