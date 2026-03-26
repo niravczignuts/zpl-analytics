@@ -6,12 +6,30 @@ import type {
   PlayerWithStats, PointsTableEntry, PlayerRemark, SeasonRegistration
 } from './types';
 
-const sql = postgres(process.env.POSTGRES_URL!, {
-  max: 1,
-  idle_timeout: 20,
-  connect_timeout: 10,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
+// Lazy-initialise: importing this module never connects until the first query.
+// This prevents ENOTFOUND errors when DATABASE_PROVIDER=sqlite locally.
+let _sql: ReturnType<typeof postgres> | null = null;
+function getSQL(): ReturnType<typeof postgres> {
+  if (!_sql) {
+    const url = process.env.POSTGRES_URL;
+    if (!url) throw new Error('POSTGRES_URL env var is not set');
+    _sql = postgres(url, {
+      max: 3,
+      idle_timeout: 20,
+      connect_timeout: 15,
+      ssl: { rejectUnauthorized: false }, // required for Supabase (pooler + direct)
+    });
+  }
+  return _sql;
+}
+// sql proxy — supports both tagged template literals (sql`...`) and methods (sql.unsafe)
+const sql = new Proxy(
+  function () {} as unknown as ReturnType<typeof postgres>,
+  {
+    get(_t, prop) { return (getSQL() as any)[prop]; },
+    apply(_t, _this, args) { return (getSQL() as any)(...args); },
+  }
+);
 
 export class SupabaseDB {
 
