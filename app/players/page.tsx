@@ -68,7 +68,7 @@ export default function PlayersPage() {
     setDetailLoading(true);
     setAddingNote(false);
     setNoteText('');
-    fetchJSON(`/api/players/${selectedId}`)
+    fetchJSON<any>(`/api/players/${selectedId}`)
       .then(d => { if (d) setDetail(d); setDetailLoading(false); })
       .catch(() => setDetailLoading(false));
   }, [selectedId]);
@@ -83,7 +83,7 @@ export default function PlayersPage() {
         body: JSON.stringify({ remark: noteText, remark_type: noteType, season_id: currentSeasonId }),
       });
       // Refresh detail
-      const d = await fetchJSON(`/api/players/${selectedId}`);
+      const d = await fetchJSON<any>(`/api/players/${selectedId}`);
       if (d) setDetail(d);
       setNoteText('');
       setAddingNote(false);

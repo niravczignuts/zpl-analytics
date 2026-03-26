@@ -216,7 +216,7 @@ export default function MatchDetailPage() {
       setInnings(data.innings || []);
       setUploadSuccess(true);
       // Refresh match status (may have been set to completed)
-      fetchJSON(`/api/matches/${id}`).then(d => { if (d) setMatch(d); }).catch(() => {});
+      fetchJSON<MatchDetail>(`/api/matches/${id}`).then(d => { if (d) setMatch(d); }).catch(() => {});
     } catch (e: any) {
       setUploadError(e.message);
     } finally {

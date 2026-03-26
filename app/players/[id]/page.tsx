@@ -76,7 +76,7 @@ export default function PlayerProfilePage() {
       body: JSON.stringify({ remark: newRemark, remark_type: remarkType }),
     });
     setNewRemark(''); setShowRemarkForm(false);
-    const fresh = await fetchJSON(`/api/players/${id}`);
+    const fresh = await fetchJSON<any>(`/api/players/${id}`);
     if (fresh) setPlayer(fresh);
     setAddingRemark(false);
   };

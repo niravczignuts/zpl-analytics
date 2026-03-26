@@ -30,7 +30,7 @@ export default function ComparePage() {
 
   const loadTeam = async (teamId: string, setter: (v: any) => void) => {
     if (!teamId) { setter(null); return; }
-    const data = await fetchJSON(`/api/teams/${teamId}?season_id=${currentSeasonId}`);
+    const data = await fetchJSON<any>(`/api/teams/${teamId}?season_id=${currentSeasonId}`);
     setter(data);
   };
 
