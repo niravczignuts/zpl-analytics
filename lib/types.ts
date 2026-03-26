@@ -202,6 +202,15 @@ export interface LeaderboardEntry {
 
 export type StatType = 'batting' | 'bowling' | 'fielding' | 'mvp';
 
+export interface PlayerOwnerData {
+  player_id: string;
+  batting_stars: number | null;   // 0–5, null = not rated
+  bowling_stars: number | null;
+  fielding_stars: number | null;
+  owner_note: string;
+  updated_at: string;
+}
+
 export interface PlayerFilters {
   season_id?: string;
   gender?: string;

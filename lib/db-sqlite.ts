@@ -6,7 +6,8 @@ import { SCHEMA_SQL } from './schema';
 import type {
   Season, Player, Team, TeamWithSquad, AuctionPurchase, BudgetInfo,
   Match, PlayerSeasonStats, LeaderboardEntry, StatType, PlayerFilters,
-  PlayerWithStats, PointsTableEntry, PlayerRemark, SeasonRegistration
+  PlayerWithStats, PointsTableEntry, PlayerRemark, SeasonRegistration,
+  PlayerOwnerData
 } from './types';
 
 let _db: Database.Database | null = null;
@@ -55,6 +56,17 @@ function getDb(): Database.Database {
       _db.exec(`ALTER TABLE players ADD COLUMN ${col} ${def}`);
     }
   }
+  // Migration: player_owner_data table
+  try {
+    _db.exec(`CREATE TABLE IF NOT EXISTS player_owner_data (
+      player_id TEXT PRIMARY KEY,
+      batting_stars INTEGER,
+      bowling_stars INTEGER,
+      fielding_stars INTEGER,
+      owner_note TEXT DEFAULT '',
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+  } catch {}
   return _db;
 }
 
@@ -715,5 +727,33 @@ export class SQLiteDB {
     const totalMatches = (this.db.prepare('SELECT COUNT(*) as c FROM matches WHERE season_id = ?').get(seasonId) as any)?.c || 0;
     const completedMatches = (this.db.prepare("SELECT COUNT(*) as c FROM matches WHERE season_id = ? AND status = 'completed'").get(seasonId) as any)?.c || 0;
     return { totalPlayers, totalTeams, totalMatches, completedMatches };
+  }
+
+  // ─── Player Owner Data ───────────────────────────────────────────────────────
+  getPlayerOwnerData(playerId: string): PlayerOwnerData | null {
+    const row = this.db.prepare('SELECT * FROM player_owner_data WHERE player_id = ?').get(playerId) as any;
+    return row || null;
+  }
+
+  upsertPlayerOwnerData(data: Partial<PlayerOwnerData> & { player_id: string }): PlayerOwnerData {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO player_owner_data (player_id, batting_stars, bowling_stars, fielding_stars, owner_note, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(player_id) DO UPDATE SET
+        batting_stars = excluded.batting_stars,
+        bowling_stars = excluded.bowling_stars,
+        fielding_stars = excluded.fielding_stars,
+        owner_note = excluded.owner_note,
+        updated_at = excluded.updated_at
+    `).run(
+      data.player_id,
+      data.batting_stars ?? null,
+      data.bowling_stars ?? null,
+      data.fielding_stars ?? null,
+      data.owner_note ?? '',
+      now
+    );
+    return this.getPlayerOwnerData(data.player_id)!;
   }
 }

@@ -3,7 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type {
   Season, Player, Team, TeamWithSquad, AuctionPurchase, BudgetInfo,
   Match, PlayerSeasonStats, LeaderboardEntry, StatType, PlayerFilters,
-  PlayerWithStats, PointsTableEntry, PlayerRemark, SeasonRegistration
+  PlayerWithStats, PointsTableEntry, PlayerRemark, SeasonRegistration,
+  PlayerOwnerData
 } from './types';
 
 export class SupabaseDB {
@@ -1123,5 +1124,37 @@ export class SupabaseDB {
       totalMatches: m.count ?? 0,
       completedMatches: cm.count ?? 0,
     };
+  }
+
+  // ─── Player Owner Data ───────────────────────────────────────────────────────
+
+  async getPlayerOwnerData(playerId: string): Promise<PlayerOwnerData | null> {
+    const { data, error } = await this.supabase
+      .from('player_owner_data')
+      .select('*')
+      .eq('player_id', playerId)
+      .maybeSingle();
+    if (error) {
+      // Table may not exist yet — return null gracefully
+      console.warn('getPlayerOwnerData error:', error.message);
+      return null;
+    }
+    return data as PlayerOwnerData | null;
+  }
+
+  async upsertPlayerOwnerData(input: Partial<PlayerOwnerData> & { player_id: string }): Promise<PlayerOwnerData> {
+    const row = {
+      player_id: input.player_id,
+      batting_stars: input.batting_stars ?? null,
+      bowling_stars: input.bowling_stars ?? null,
+      fielding_stars: input.fielding_stars ?? null,
+      owner_note: input.owner_note ?? '',
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await this.supabase
+      .from('player_owner_data')
+      .upsert(row, { onConflict: 'player_id' });
+    if (error) throw new Error('Failed to save owner data (run Supabase migration): ' + error.message);
+    return (await this.getPlayerOwnerData(input.player_id)) ?? row as any;
   }
 }

@@ -16,6 +16,7 @@ import {
   getBudgetHealthColor,
   getBudgetHealthBg,
 } from '@/lib/calculations';
+import { getZPL2025Price } from '@/lib/zpl2025-db';
 import {
   Gavel,
   Sparkles,
@@ -31,6 +32,7 @@ import {
   Loader2,
   Undo2,
   AlertCircle,
+  Star,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -161,6 +163,13 @@ export default function AuctionPage() {
   const [bidAdviceLoading, setBidAdviceLoading] = useState(false);
   const [bidAdviceError, setBidAdviceError] = useState('');
 
+  // Owner ratings + notes state
+  const [ownerData, setOwnerData] = useState<{ batting_stars: number|null; bowling_stars: number|null; fielding_stars: number|null; owner_note: string }>({
+    batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: ''
+  });
+  const [ownerDataSaving, setOwnerDataSaving] = useState(false);
+  const [ownerDataSaved, setOwnerDataSaved] = useState(false);
+
   // ── Data fetching ──────────────────────────────────────────────────────────
 
   const fetchAll = useCallback(async () => {
@@ -199,6 +208,27 @@ export default function AuctionPage() {
       .then(r => r.json())
       .then(d => { setPlayerDetail(d); setPlayerDetailLoading(false); })
       .catch(() => setPlayerDetailLoading(false));
+  }, [selectedPlayer]);
+
+  // Load owner data for selected player
+  useEffect(() => {
+    if (!selectedPlayer) {
+      setOwnerData({ batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '' });
+      return;
+    }
+    fetch(`/api/player-owner-data/${selectedPlayer.id}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d && !d.error) {
+          setOwnerData({
+            batting_stars: d.batting_stars ?? null,
+            bowling_stars: d.bowling_stars ?? null,
+            fielding_stars: d.fielding_stars ?? null,
+            owner_note: d.owner_note ?? '',
+          });
+        }
+      })
+      .catch(() => {});
   }, [selectedPlayer]);
 
   // ── Filtered player list ───────────────────────────────────────────────────
@@ -311,6 +341,22 @@ export default function AuctionPage() {
     }
   };
 
+  const handleSaveOwnerData = async () => {
+    if (!selectedPlayer) return;
+    setOwnerDataSaving(true);
+    setOwnerDataSaved(false);
+    try {
+      await fetch(`/api/player-owner-data/${selectedPlayer.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ownerData),
+      });
+      setOwnerDataSaved(true);
+      setTimeout(() => setOwnerDataSaved(false), 1500);
+    } catch {}
+    finally { setOwnerDataSaving(false); }
+  };
+
   // ── AI Bid Advice for selected player ──────────────────────────────────────
 
   const handleGetBidAdvice = async () => {
@@ -319,11 +365,21 @@ export default function AuctionPage() {
     setBidAdvice(null);
     setBidAdviceError('');
     try {
-      const res = await fetch('/api/ai/player-bid', {
+      const res = await fetch('/api/ai/bid-advice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // No team_id — API auto-targets Super Smashers
-        body: JSON.stringify({ player_id: selectedPlayer.id, season_id: currentSeasonId }),
+        body: JSON.stringify({
+          player_id: selectedPlayer.id,
+          season_id: currentSeasonId,
+          team_id: selectedTeamId || '',
+          current_bid_price: purchasePrice ? Number(purchasePrice) : null,
+          owner_ratings: {
+            batting: ownerData.batting_stars,
+            bowling: ownerData.bowling_stars,
+            fielding: ownerData.fielding_stars,
+          },
+          owner_note: ownerData.owner_note,
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -595,6 +651,20 @@ export default function AuctionPage() {
                         {selectedPlayer.batting_hand && <span>Bats: {selectedPlayer.batting_hand}</span>}
                         {selectedPlayer.bowling_style && <span>Bowls: {selectedPlayer.bowling_style}</span>}
                       </div>
+                      {/* ZPL 2025 Price */}
+                      {(() => {
+                        const zpl = getZPL2025Price(playerFullName(selectedPlayer));
+                        return (
+                          <div className="mt-1">
+                            <span className={cn(
+                              'text-[10px] px-2 py-0.5 rounded-full font-semibold',
+                              zpl ? 'bg-[#FFD700]/15 text-[#FFD700]' : 'bg-white/5 text-muted-foreground'
+                            )}>
+                              ZPL 2025: {zpl ? `₹${zpl.price}L — ${zpl.team}` : 'New Player'}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                   <div className="text-right">
@@ -698,6 +768,63 @@ export default function AuctionPage() {
                     <p className="text-xs text-muted-foreground/60 italic">New player — no historical data or notes available.</p>
                   )}
 
+                  {/* ── Owner Ratings + Notes ── */}
+                  <div className="border border-border/50 rounded-xl p-3 space-y-3 bg-background/40">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Your Assessment</p>
+
+                    {/* Star Ratings */}
+                    {[
+                      { key: 'batting_stars' as const, label: '🏏 Batting' },
+                      { key: 'bowling_stars' as const, label: '🎳 Bowling' },
+                      { key: 'fielding_stars' as const, label: '🤸 Fielding' },
+                    ].map(({ key, label }) => (
+                      <div key={key} className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground w-20 shrink-0">{label}</span>
+                        <div className="flex gap-1">
+                          {[1, 2, 3, 4, 5].map(star => (
+                            <button
+                              key={star}
+                              onClick={() => setOwnerData(prev => ({
+                                ...prev,
+                                [key]: prev[key] === star ? null : star,
+                              }))}
+                              className="text-base leading-none transition-transform hover:scale-110"
+                              title={`${star}/5`}
+                            >
+                              {(ownerData[key] ?? 0) >= star ? '★' : '☆'}
+                            </button>
+                          ))}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">
+                          {ownerData[key] != null ? `${ownerData[key]}/5` : '–'}
+                        </span>
+                      </div>
+                    ))}
+
+                    {/* Owner Note */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground">📝 My Note</label>
+                      <textarea
+                        value={ownerData.owner_note}
+                        onChange={e => setOwnerData(prev => ({ ...prev, owner_note: e.target.value.slice(0, 500) }))}
+                        onBlur={handleSaveOwnerData}
+                        placeholder='e.g. "max 50L", "must have", "avoid"…'
+                        rows={2}
+                        className="w-full text-xs bg-background/60 border border-border/60 rounded-md px-2.5 py-1.5 text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-[#FFD700]/50 placeholder:text-muted-foreground/40"
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground/50">{ownerData.owner_note.length}/500</span>
+                        <button
+                          onClick={handleSaveOwnerData}
+                          disabled={ownerDataSaving}
+                          className="text-[10px] px-2 py-0.5 rounded bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700]/20 transition-colors disabled:opacity-50"
+                        >
+                          {ownerDataSaved ? '✓ Saved' : ownerDataSaving ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* AI Bid Advice */}
                   <Button
                     onClick={handleGetBidAdvice}
@@ -741,6 +868,13 @@ export default function AuctionPage() {
                         </span>
                       </div>
 
+                      {/* ZPL 2025 anchor */}
+                      {bidAdvice.zpl2025_price && (
+                        <p className="text-[10px] text-[#FFD700]/70 font-medium">
+                          📅 {bidAdvice.zpl2025_price}
+                        </p>
+                      )}
+
                       {/* Reason */}
                       {bidAdvice.reason && (
                         <p className="text-xs text-foreground/85 leading-relaxed">{bidAdvice.reason}</p>
@@ -775,6 +909,14 @@ export default function AuctionPage() {
                       {/* Value assessment */}
                       {bidAdvice.value_assessment && (
                         <p className="text-[10px] text-muted-foreground italic">{bidAdvice.value_assessment}</p>
+                      )}
+
+                      {/* Comparable players */}
+                      {bidAdvice.comparable_players && (
+                        <div className="bg-background/40 rounded-md px-2.5 py-2 border border-border/40">
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Comparable Players</p>
+                          <p className="text-xs text-foreground/70 whitespace-pre-line">{bidAdvice.comparable_players}</p>
+                        </div>
                       )}
 
                       {/* Risks */}

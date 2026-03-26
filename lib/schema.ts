@@ -205,4 +205,13 @@ CREATE TABLE IF NOT EXISTS points_table (
   net_run_rate REAL DEFAULT 0,
   UNIQUE(season_id, team_id)
 );
+
+CREATE TABLE IF NOT EXISTS player_owner_data (
+  player_id TEXT PRIMARY KEY,
+  batting_stars INTEGER,
+  bowling_stars INTEGER,
+  fielding_stars INTEGER,
+  owner_note TEXT DEFAULT '',
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 `;
