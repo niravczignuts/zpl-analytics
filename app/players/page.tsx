@@ -11,7 +11,6 @@ import { getRoleIcon, getRoleBadgeColor, formatCurrency } from '@/lib/calculatio
 import { cn } from '@/lib/utils';
 import { Search, Users, X, Loader2, ChevronRight, StickyNote, PlusCircle, Pencil, Star } from 'lucide-react';
 import Link from 'next/link';
-import { PlayerRatingPopup } from '@/components/PlayerRatingPopup';
 
 interface Player {
   id: string; first_name: string; last_name: string;
@@ -63,14 +62,15 @@ export default function PlayersPage() {
 
   // Ratings map: playerId → owner data
   const [ratingsMap, setRatingsMap] = useState<Record<string, { batting_stars: number | null; bowling_stars: number | null; fielding_stars: number | null; owner_note: string }>>({});
-  // Rating popup: which player card is showing the popup
-  const [ratingPopupId, setRatingPopupId] = useState<string | null>(null);
 
-  // Quick edit state
+  // Combined edit modal state
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', gender: '', player_role: '', batting_hand: '', bowling_style: '' });
   const [editSaving, setEditSaving] = useState(false);
   const [editSaved, setEditSaved] = useState(false);
+  const [modalRating, setModalRating] = useState<{ batting_stars: number | null; bowling_stars: number | null; fielding_stars: number | null; owner_note: string }>({ batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '' });
+  const [modalRatingSaving, setModalRatingSaving] = useState(false);
+  const [modalRatingSaved, setModalRatingSaved] = useState(false);
 
   const openEdit = (p: Player, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -78,7 +78,43 @@ export default function PlayersPage() {
       first_name: p.first_name, last_name: p.last_name, gender: p.gender || '',
       player_role: p.player_role || '', batting_hand: p.batting_hand || '', bowling_style: p.bowling_style || '',
     });
+    // Pre-fill from ratingsMap if available, then fetch fresh
+    const cached = ratingsMap[p.id];
+    setModalRating(cached ?? { batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '' });
+    setModalRatingSaved(false);
     setEditingPlayer(p);
+    fetch(`/api/player-owner-data/${p.id}`)
+      .then(r => r.json())
+      .then(d => { if (d && !d.error) setModalRating({ batting_stars: d.batting_stars ?? null, bowling_stars: d.bowling_stars ?? null, fielding_stars: d.fielding_stars ?? null, owner_note: d.owner_note || '' }); })
+      .catch(() => {});
+  };
+
+  const handleModalStarClick = async (key: 'batting_stars' | 'bowling_stars' | 'fielding_stars', star: number) => {
+    if (!editingPlayer) return;
+    const updated = { ...modalRating, [key]: modalRating[key] === star ? null : star };
+    setModalRating(updated);
+    setModalRatingSaving(true);
+    try {
+      await fetch(`/api/player-owner-data/${editingPlayer.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) });
+      setRatingsMap(prev => ({ ...prev, [editingPlayer.id]: updated }));
+      if (selectedId === editingPlayer.id) setOwnerData(updated);
+      setModalRatingSaved(true);
+      setTimeout(() => setModalRatingSaved(false), 1500);
+    } catch (e) { console.error(e); }
+    finally { setModalRatingSaving(false); }
+  };
+
+  const handleModalNoteSave = async () => {
+    if (!editingPlayer) return;
+    setModalRatingSaving(true);
+    try {
+      await fetch(`/api/player-owner-data/${editingPlayer.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(modalRating) });
+      setRatingsMap(prev => ({ ...prev, [editingPlayer.id]: modalRating }));
+      if (selectedId === editingPlayer.id) setOwnerData(modalRating);
+      setModalRatingSaved(true);
+      setTimeout(() => setModalRatingSaved(false), 1500);
+    } catch (e) { console.error(e); }
+    finally { setModalRatingSaving(false); }
   };
 
   const handleEditSave = async () => {
@@ -285,27 +321,19 @@ export default function PlayersPage() {
                     </CardContent>
                   </Card>
                 </button>
-                {/* Always-visible action buttons row */}
-                <div className="flex gap-1 mt-1 px-0.5">
-                  <button
-                    onClick={e => { e.stopPropagation(); setRatingPopupId(p.id); }}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-[10px] font-medium border transition-colors',
-                      ratingsMap[p.id] && (ratingsMap[p.id].batting_stars != null || ratingsMap[p.id].bowling_stars != null || ratingsMap[p.id].fielding_stars != null)
-                        ? 'bg-[#FFD700]/10 border-[#FFD700]/30 text-[#FFD700]'
-                        : 'bg-card border-border text-muted-foreground hover:border-[#FFD700]/30 hover:text-[#FFD700]/80'
-                    )}
-                  >
-                    ★ {ratingsMap[p.id]?.batting_stars != null || ratingsMap[p.id]?.bowling_stars != null || ratingsMap[p.id]?.fielding_stars != null ? 'Rated' : 'Rate'}
-                  </button>
-                  <button
-                    onClick={e => openEdit(p, e)}
-                    className="w-7 flex items-center justify-center py-1 rounded-md border border-border bg-card text-muted-foreground hover:border-[#FFD700]/30 hover:text-[#FFD700]/80 transition-colors"
-                    title="Quick edit"
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </button>
-                </div>
+                {/* Single edit button */}
+                <button
+                  onClick={e => openEdit(p, e)}
+                  className={cn(
+                    'w-full mt-1 flex items-center justify-center gap-1.5 py-1 rounded-md text-[11px] font-medium border transition-colors',
+                    ratingsMap[p.id] && (ratingsMap[p.id].batting_stars != null || ratingsMap[p.id].bowling_stars != null || ratingsMap[p.id].fielding_stars != null)
+                      ? 'bg-[#FFD700]/10 border-[#FFD700]/30 text-[#FFD700]'
+                      : 'bg-card border-border text-muted-foreground hover:border-[#FFD700]/30 hover:text-[#FFD700]/80'
+                  )}
+                >
+                  <Pencil className="w-2.5 h-2.5" />
+                  {ratingsMap[p.id]?.batting_stars != null || ratingsMap[p.id]?.bowling_stars != null || ratingsMap[p.id]?.fielding_stars != null ? 'Edit / Rated ★' : 'Edit / Rate'}
+                </button>
               </div>
             ))}
             {filtered.length === 0 && (
@@ -570,100 +598,146 @@ export default function PlayersPage() {
         </div>
       )}
 
-      {/* ── Rating Popup (page-level so it's never clipped) ── */}
-      {ratingPopupId && (
-        <PlayerRatingPopup
-          playerId={ratingPopupId}
-          playerName={(() => { const p = players.find(x => x.id === ratingPopupId); return p ? `${p.first_name} ${p.last_name}` : ''; })()}
-          onClose={() => setRatingPopupId(null)}
-          onSaved={data => { handleRatingSaved(ratingPopupId, data); setRatingPopupId(null); }}
-        />
-      )}
-
-      {/* ── Quick Edit Modal ── */}
+      {/* ── Combined Edit + Rate Modal ── */}
       {editingPlayer && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setEditingPlayer(null)}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setEditingPlayer(null)}>
           <div
-            className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl"
+            className="bg-card border border-border rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border shrink-0">
               <div>
-                <h3 className="font-bold text-base text-foreground">Edit Player</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">{editingPlayer.first_name} {editingPlayer.last_name}</p>
+                <h3 className="font-bold text-base text-foreground">{editingPlayer.first_name} {editingPlayer.last_name}</h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wider">Edit Profile & Ratings</p>
               </div>
-              <button onClick={() => setEditingPlayer(null)} className="text-muted-foreground hover:text-foreground">
+              <button onClick={() => setEditingPlayer(null)} className="text-muted-foreground hover:text-foreground p-1">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Form */}
-            <div className="p-5 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">First Name</label>
-                  <Input value={editForm.first_name} onChange={e => setEditForm(p => ({ ...p, first_name: e.target.value }))}
-                    className="h-8 text-sm bg-background border-border" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Last Name</label>
-                  <Input value={editForm.last_name} onChange={e => setEditForm(p => ({ ...p, last_name: e.target.value }))}
-                    className="h-8 text-sm bg-background border-border" />
+            <div className="overflow-y-auto flex-1">
+              {/* ── Ratings section ── */}
+              <div className="px-5 pt-4 pb-3 space-y-3 border-b border-border/60">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <span>★</span> Your Assessment
+                  {modalRatingSaved && <span className="text-green-400 normal-case font-normal">✓ Saved</span>}
+                  {modalRatingSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                </p>
+                {([
+                  { key: 'batting_stars' as const, icon: '🏏', label: 'Batting' },
+                  { key: 'bowling_stars' as const, icon: '🎳', label: 'Bowling' },
+                  { key: 'fielding_stars' as const, icon: '🤸', label: 'Fielding' },
+                ]).map(({ key, icon, label }) => (
+                  <div key={key} className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground w-20 shrink-0">{icon} {label}</span>
+                    <div className="flex gap-1.5 flex-1">
+                      {[1,2,3,4,5].map(s => (
+                        <button
+                          key={s}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => handleModalStarClick(key, s)}
+                          className="text-2xl leading-none text-[#FFD700] hover:scale-110 active:scale-125 transition-transform select-none touch-manipulation"
+                        >
+                          {(modalRating[key] ?? 0) >= s ? '★' : '☆'}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground w-8 text-right shrink-0">
+                      {modalRating[key] != null ? `${modalRating[key]}/5` : '–'}
+                    </span>
+                  </div>
+                ))}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-muted-foreground font-medium block">📝 Note</label>
+                  <div className="flex gap-2">
+                    <textarea
+                      value={modalRating.owner_note}
+                      onChange={e => setModalRating(prev => ({ ...prev, owner_note: e.target.value.slice(0, 300) }))}
+                      onBlur={handleModalNoteSave}
+                      placeholder='e.g. "max 50L", "must have", "avoid if > 40L"…'
+                      rows={2}
+                      className="flex-1 text-sm bg-background border border-border rounded-lg px-3 py-2 text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-[#FFD700]/50 placeholder:text-muted-foreground/40"
+                    />
+                    <button
+                      onClick={handleModalNoteSave}
+                      disabled={modalRatingSaving}
+                      className="self-end px-3 py-2 rounded-lg bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700]/20 text-xs font-semibold transition-colors disabled:opacity-50 shrink-0"
+                    >
+                      Save
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Gender</label>
-                  <select value={editForm.gender} onChange={e => setEditForm(p => ({ ...p, gender: e.target.value }))}
-                    className="w-full h-8 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
-                    <option value="">Select</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                  </select>
+
+              {/* ── Profile section ── */}
+              <div className="px-5 pt-4 pb-3 space-y-3">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Profile</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">First Name</label>
+                    <Input value={editForm.first_name} onChange={e => setEditForm(p => ({ ...p, first_name: e.target.value }))}
+                      className="h-9 text-sm bg-background border-border" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Last Name</label>
+                    <Input value={editForm.last_name} onChange={e => setEditForm(p => ({ ...p, last_name: e.target.value }))}
+                      className="h-9 text-sm bg-background border-border" />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Role</label>
-                  <select value={editForm.player_role} onChange={e => setEditForm(p => ({ ...p, player_role: e.target.value }))}
-                    className="w-full h-8 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
-                    <option value="">Select</option>
-                    <option>Batsman</option>
-                    <option>Bowler</option>
-                    <option>All-Rounder</option>
-                    <option>Wicketkeeper</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Gender</label>
+                    <select value={editForm.gender} onChange={e => setEditForm(p => ({ ...p, gender: e.target.value }))}
+                      className="w-full h-9 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
+                      <option value="">Select</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Role</label>
+                    <select value={editForm.player_role} onChange={e => setEditForm(p => ({ ...p, player_role: e.target.value }))}
+                      className="w-full h-9 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
+                      <option value="">Select</option>
+                      <option>Batsman</option>
+                      <option>Bowler</option>
+                      <option>All-Rounder</option>
+                      <option>Wicketkeeper</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Batting Hand</label>
-                  <select value={editForm.batting_hand} onChange={e => setEditForm(p => ({ ...p, batting_hand: e.target.value }))}
-                    className="w-full h-8 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
-                    <option value="">Select</option>
-                    <option>Right</option>
-                    <option>Left</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Bowling Style</label>
-                  <select value={editForm.bowling_style} onChange={e => setEditForm(p => ({ ...p, bowling_style: e.target.value }))}
-                    className="w-full h-8 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
-                    <option value="">Select</option>
-                    <option>Right Arm Fast</option>
-                    <option>Right Arm Medium</option>
-                    <option>Right Arm Off Break</option>
-                    <option>Right Arm Leg Break</option>
-                    <option>Left Arm Fast</option>
-                    <option>Left Arm Medium</option>
-                    <option>Left Arm Orthodox</option>
-                    <option>Left Arm Chinaman</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Batting Hand</label>
+                    <select value={editForm.batting_hand} onChange={e => setEditForm(p => ({ ...p, batting_hand: e.target.value }))}
+                      className="w-full h-9 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
+                      <option value="">Select</option>
+                      <option>Right</option>
+                      <option>Left</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Bowling Style</label>
+                    <select value={editForm.bowling_style} onChange={e => setEditForm(p => ({ ...p, bowling_style: e.target.value }))}
+                      className="w-full h-9 text-sm bg-background border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]">
+                      <option value="">Select</option>
+                      <option>Right Arm Fast</option>
+                      <option>Right Arm Medium</option>
+                      <option>Right Arm Off Break</option>
+                      <option>Right Arm Leg Break</option>
+                      <option>Left Arm Fast</option>
+                      <option>Left Arm Medium</option>
+                      <option>Left Arm Orthodox</option>
+                      <option>Left Arm Chinaman</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Footer */}
-            <div className="flex gap-2 px-5 pb-5">
+            <div className="flex gap-2 px-5 py-4 border-t border-border shrink-0">
               <Button variant="outline" className="flex-1 border-border" onClick={() => setEditingPlayer(null)}>
                 Cancel
               </Button>
@@ -672,7 +746,7 @@ export default function PlayersPage() {
                 onClick={handleEditSave}
                 disabled={editSaving}
               >
-                {editSaved ? '✓ Saved!' : editSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving…</> : 'Save Changes'}
+                {editSaved ? '✓ Saved!' : editSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving…</> : 'Save Profile'}
               </Button>
             </div>
           </div>
