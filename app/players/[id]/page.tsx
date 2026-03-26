@@ -41,9 +41,9 @@ export default function PlayerProfilePage() {
 
   useEffect(() => {
     Promise.all([
-      fetchJSON(`/api/players/${id}`),
-      fetchJSON('/api/seasons'),
-      fetchJSON(`/api/players/${id}/match-history`).catch(() => ({ batting: [], bowling: [] })),
+      fetchJSON<PlayerDetail>(`/api/players/${id}`),
+      fetchJSON<any>('/api/seasons'),
+      fetchJSON<any>(`/api/players/${id}/match-history`).catch(() => ({ batting: [], bowling: [] })),
     ]).then(([playerData, seasonsData, historyData]) => {
       if (playerData) setPlayer(playerData);
       // Sort newest first so tabs default to most recent season
