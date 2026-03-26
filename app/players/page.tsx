@@ -9,8 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { getRoleIcon, getRoleBadgeColor, formatCurrency } from '@/lib/calculations';
 import { cn } from '@/lib/utils';
-import { Search, Users, X, Loader2, ChevronRight, StickyNote, PlusCircle, Pencil } from 'lucide-react';
+import { Search, Users, X, Loader2, ChevronRight, StickyNote, PlusCircle, Pencil, Star } from 'lucide-react';
 import Link from 'next/link';
+import { PlayerRatingPopup } from '@/components/PlayerRatingPopup';
 
 interface Player {
   id: string; first_name: string; last_name: string;
@@ -48,7 +49,6 @@ export default function PlayersPage() {
   // Add note
   const [addingNote, setAddingNote] = useState(false);
   const [noteText, setNoteText] = useState('');
-  const [noteType, setNoteType] = useState('general');
   const [savingNote, setSavingNote] = useState(false);
 
   // Owner ratings state
@@ -60,6 +60,11 @@ export default function PlayersPage() {
   }>({ batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '' });
   const [ownerSaving, setOwnerSaving] = useState(false);
   const [ownerSaved, setOwnerSaved] = useState(false);
+
+  // Ratings map: playerId → owner data
+  const [ratingsMap, setRatingsMap] = useState<Record<string, { batting_stars: number | null; bowling_stars: number | null; fielding_stars: number | null; owner_note: string }>>({});
+  // Rating popup: which player card is showing the popup
+  const [ratingPopupId, setRatingPopupId] = useState<string | null>(null);
 
   // Quick edit state
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
@@ -104,7 +109,17 @@ export default function PlayersPage() {
     if (search) params.set('search', search);
     if (roleFilter) params.set('player_role', roleFilter);
     fetchJSON<any[]>(`/api/players?${params}`)
-      .then(d => { setPlayers(Array.isArray(d) ? d : []); setLoading(false); })
+      .then(async d => {
+        const list = Array.isArray(d) ? d : [];
+        setPlayers(list);
+        setLoading(false);
+        // Bulk-load ratings
+        if (list.length) {
+          const ids = list.map((p: any) => p.id).join(',');
+          const rm = await fetchJSON<Record<string, any>>(`/api/player-owner-data?ids=${ids}`).catch(() => null);
+          if (rm) setRatingsMap(rm);
+        }
+      })
       .catch(() => setLoading(false));
   }, [currentSeasonId, search, roleFilter]);
 
@@ -144,6 +159,15 @@ export default function PlayersPage() {
     const updated = { ...ownerData, [key]: ownerData[key] === star ? null : star };
     setOwnerData(updated);
     handleSaveOwnerData(updated);
+    if (selectedId) setRatingsMap(prev => ({ ...prev, [selectedId]: updated }));
+  };
+
+  const handleRatingSaved = (playerId: string, data: any) => {
+    setRatingsMap(prev => ({ ...prev, [playerId]: data }));
+    // Also update detail panel ownerData if this player is selected
+    if (selectedId === playerId) {
+      setOwnerData(data);
+    }
   };
 
   const handleSaveNote = async () => {
@@ -153,7 +177,7 @@ export default function PlayersPage() {
       await fetch(`/api/players/${selectedId}/remarks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ remark: noteText, remark_type: noteType, season_id: currentSeasonId }),
+        body: JSON.stringify({ remark: noteText, remark_type: 'general', season_id: currentSeasonId }),
       });
       // Refresh detail
       const d = await fetchJSON<any>(`/api/players/${selectedId}`);
@@ -225,7 +249,7 @@ export default function PlayersPage() {
           {/* Player Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 content-start">
             {filtered.map(p => (
-              <div key={p.id} className="relative group">
+              <div key={p.id} className="relative group" style={{ position: 'relative' }}>
                 <button
                   onClick={() => setSelectedId(selectedId === p.id ? null : p.id)}
                   className="text-left w-full"
@@ -258,10 +282,16 @@ export default function PlayersPage() {
                       {p.purchase_price > 0 && (
                         <p className="text-xs text-[#FFD700] font-bold mt-1">{formatCurrency(p.purchase_price)}</p>
                       )}
-                      {selectedId === p.id && ownerData.batting_stars != null && (
-                        <p className="text-[9px] text-[#FFD700]/60 mt-1">
-                          {'★'.repeat(ownerData.batting_stars)}{'☆'.repeat(5 - ownerData.batting_stars)}
-                        </p>
+                      {/* Compact rating display */}
+                      {ratingsMap[p.id] && (ratingsMap[p.id].batting_stars != null || ratingsMap[p.id].bowling_stars != null) && (
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          {ratingsMap[p.id].batting_stars != null && (
+                            <span className="text-[9px] text-[#FFD700]/70">🏏{'★'.repeat(ratingsMap[p.id].batting_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].batting_stars!)}</span>
+                          )}
+                          {ratingsMap[p.id].bowling_stars != null && (
+                            <span className="text-[9px] text-[#FFD700]/70">🎳{'★'.repeat(ratingsMap[p.id].bowling_stars!)}{'☆'.repeat(5 - ratingsMap[p.id].bowling_stars!)}</span>
+                          )}
+                        </div>
                       )}
                     </CardContent>
                   </Card>
@@ -273,6 +303,23 @@ export default function PlayersPage() {
                 >
                   <Pencil className="w-3 h-3" />
                 </button>
+                {/* Rate button */}
+                <button
+                  onClick={e => { e.stopPropagation(); setRatingPopupId(ratingPopupId === p.id ? null : p.id); }}
+                  className="absolute bottom-1.5 right-1.5 opacity-0 group-hover:opacity-100 focus:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-background/90 border border-border/60 text-[#FFD700]/70 hover:text-[#FFD700] hover:border-[#FFD700]/30 transition-all z-10 text-[10px] font-medium"
+                  title="Rate this player"
+                >
+                  ★ Rate
+                </button>
+                {/* Rating popup */}
+                {ratingPopupId === p.id && (
+                  <PlayerRatingPopup
+                    playerId={p.id}
+                    playerName={`${p.first_name} ${p.last_name}`}
+                    onClose={() => setRatingPopupId(null)}
+                    onSaved={data => { handleRatingSaved(p.id, data); }}
+                  />
+                )}
               </div>
             ))}
             {filtered.length === 0 && (
@@ -501,17 +548,6 @@ export default function PlayersPage() {
 
                       {addingNote && (
                         <div className="mt-2 space-y-2 bg-background/60 rounded-lg border border-border p-3">
-                          <select
-                            value={noteType}
-                            onChange={e => setNoteType(e.target.value)}
-                            className="w-full bg-background border border-border text-xs rounded-md px-2 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]"
-                          >
-                            <option value="general">General</option>
-                            <option value="auction">Auction</option>
-                            <option value="performance">Performance</option>
-                            <option value="injury">Injury</option>
-                            <option value="scouting">Scouting</option>
-                          </select>
                           <textarea
                             value={noteText}
                             onChange={e => setNoteText(e.target.value)}

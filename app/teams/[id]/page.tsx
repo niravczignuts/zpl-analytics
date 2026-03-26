@@ -70,6 +70,7 @@ export default function TeamDetailPage() {
   const { currentSeasonId } = useSeason();
   const [team, setTeam]     = useState<TeamDetail | null>(null);
   const [loading, setLoading]       = useState(true);
+  const [ratingsMap, setRatingsMap] = useState<Record<string, any>>({});
   const [aiLoading, setAiLoading]   = useState(false);
   const [aiReport, setAiReport]     = useState('');
   const [showAI, setShowAI]         = useState(false);
@@ -80,7 +81,17 @@ export default function TeamDetailPage() {
     setLoading(true);
     fetch(`/api/teams/${id}?season_id=${currentSeasonId}`)
       .then(r => r.json())
-      .then(d => { setTeam(d); setLoading(false); })
+      .then(d => {
+        setTeam(d);
+        setLoading(false);
+        if (d.players?.length) {
+          const ids = d.players.map((p: any) => p.id).join(',');
+          fetch(`/api/player-owner-data?ids=${ids}`)
+            .then(r => r.json())
+            .then(rm => { if (!rm.error) setRatingsMap(rm); })
+            .catch(() => {});
+        }
+      })
       .catch(() => setLoading(false));
   }, [id, currentSeasonId]);
 
@@ -538,6 +549,13 @@ export default function TeamDetailPage() {
                     {getRoleIcon(p.player_role)} {p.player_role || '—'}
                   </span>
                 </div>
+                {ratingsMap[p.id] && (ratingsMap[p.id].batting_stars != null || ratingsMap[p.id].bowling_stars != null || ratingsMap[p.id].fielding_stars != null) && (
+                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                    {ratingsMap[p.id].batting_stars != null && <span className="text-[9px] text-[#FFD700]/70">🏏{'★'.repeat(ratingsMap[p.id].batting_stars)}{'☆'.repeat(5-ratingsMap[p.id].batting_stars)}</span>}
+                    {ratingsMap[p.id].bowling_stars != null && <span className="text-[9px] text-[#FFD700]/70">🎳{'★'.repeat(ratingsMap[p.id].bowling_stars)}{'☆'.repeat(5-ratingsMap[p.id].bowling_stars)}</span>}
+                    {ratingsMap[p.id].fielding_stars != null && <span className="text-[9px] text-[#FFD700]/70">🤸{'★'.repeat(ratingsMap[p.id].fielding_stars)}{'☆'.repeat(5-ratingsMap[p.id].fielding_stars)}</span>}
+                  </div>
+                )}
               </div>
               <div className="text-right shrink-0 space-y-0.5">
                 {p.purchase_price > 0 && <p className="text-xs font-bold text-[#FFD700]">{formatCurrency(p.purchase_price)}</p>}
