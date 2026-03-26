@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { season_id } = body;
     // Accept custom roles from UI; fall back to hardcoded defaults
-    const roles: typeof TEAM_ROLES = body.roles ?? TEAM_ROLES;
+    const roles: (typeof TEAM_ROLES[0] & { team_id?: string })[] = body.roles ?? TEAM_ROLES;
     if (!season_id) return NextResponse.json({ error: 'season_id required' }, { status: 400 });
 
     const db = getDB();
