@@ -45,12 +45,12 @@ export default function PlayerProfilePage() {
       fetchJSON('/api/seasons'),
       fetchJSON(`/api/players/${id}/match-history`).catch(() => ({ batting: [], bowling: [] })),
     ]).then(([playerData, seasonsData, historyData]) => {
-      setPlayer(playerData);
+      if (playerData) setPlayer(playerData);
       // Sort newest first so tabs default to most recent season
-      const sorted = (Array.isArray(seasonsData) ? seasonsData : seasonsData.seasons ?? [])
+      const sorted = (Array.isArray(seasonsData) ? seasonsData : (seasonsData as any)?.seasons ?? [])
         .sort((a: Season, b: Season) => b.year - a.year);
       setSeasons(sorted);
-      setMatchHistory({ batting: historyData.batting || [], bowling: historyData.bowling || [] });
+      setMatchHistory({ batting: (historyData as any)?.batting || [], bowling: (historyData as any)?.bowling || [] });
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [id]);

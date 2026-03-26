@@ -58,7 +58,7 @@ export default function TeamRolesPage() {
       // Build roles rows from actual DB teams
       const rows: TeamRole[] = (Array.isArray(teamsData) ? teamsData : []).map((t: any) => {
         // Try to find a matching default suggestion by loose name comparison
-        const def = defaults.find(d =>
+        const def = (defaults ?? []).find(d =>
           t.name.toLowerCase().includes(d.team.toLowerCase()) ||
           d.team.toLowerCase().includes(t.name.toLowerCase())
         );
