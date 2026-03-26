@@ -22,12 +22,14 @@ export async function fetchJSON<T = unknown>(
   }
 
   const contentType = res.headers.get('content-type') || '';
+  const text = await res.text();
+
   if (!contentType.includes('application/json')) {
-    console.error(`[fetchJSON] non-JSON response from ${url}: status=${res.status} content-type="${contentType}" finalUrl="${finalUrl}"`);
-    return null;
+    console.error(`[fetchJSON] non-JSON response from ${url}: status=${res.status} content-type="${contentType}" finalUrl="${finalUrl}" body-preview="${text.slice(0, 200)}"`);
+    // Re-throw as an error so callers can surface it in the UI
+    throw new Error(`API error ${res.status}: ${text.slice(0, 120) || contentType || 'empty response'}`);
   }
 
-  const text = await res.text();
   if (!text) return null;
   try {
     return JSON.parse(text) as T;
