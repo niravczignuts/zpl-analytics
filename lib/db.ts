@@ -11,9 +11,10 @@ export function getDB(): AnyDB {
     if (DB_PROVIDER === 'supabase') {
       _instance = new SupabaseDB();
     } else {
-      // Dynamic require keeps db-sqlite out of the production bundle trace
+      // turbopackIgnore prevents Turbopack from tracing db-sqlite.ts in the
+      // production bundle — SQLite is only used in local dev (DATABASE_PROVIDER=sqlite)
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { SQLiteDB } = require('./db-sqlite') as typeof import('./db-sqlite');
+      const { SQLiteDB } = require(/* turbopackIgnore: true */ './db-sqlite') as typeof import('./db-sqlite');
       _instance = new SQLiteDB();
     }
   }
