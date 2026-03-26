@@ -250,7 +250,7 @@ export default function PlayersPage() {
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input id="player-search" value={search} onChange={e => setSearch(e.target.value)}
+          <Input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search players..." className="pl-9 bg-card border-border" />
         </div>
         <div className="flex gap-1 flex-wrap">
