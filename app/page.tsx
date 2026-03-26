@@ -30,8 +30,11 @@ export default function DashboardPage() {
     if (!currentSeasonId) return;
     setLoading(true);
     fetch(`/api/dashboard?season_id=${currentSeasonId}`)
-      .then(r => r.json())
-      .then(setData)
+      .then(r => {
+        if (r.status === 401) { window.location.href = '/login'; return null; }
+        return r.json();
+      })
+      .then(d => { if (d) setData(d); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [currentSeasonId]);
