@@ -74,24 +74,18 @@ export async function POST() {
     if (e1) return NextResponse.json({ success: false, error: `Season update: ${e1.message}`, log }, { status: 500 });
     log.push('✅ Season 2026: 3 CR budget, 13-player squads');
 
-    // ── 2. Captain base_prices ────────────────────────────────────────────────
+    // Build captain price lookup by normalised name
+    const captainPriceMap: Record<string, number> = {};
     for (const c of CAPTAINS) {
-      const pid = await findPlayer(sb, c.first, c.last);
-      if (!pid) { log.push(`⚠️  Player not found: ${c.first} ${c.last}`); continue; }
-      const { error: e2 } = await sb.from('season_registrations')
-        .update({ base_price: c.price })
-        .eq('player_id', pid)
-        .eq('season_id', SEASON_ID);
-      if (e2) log.push(`⚠️  base_price failed for ${c.first} ${c.last}: ${e2.message}`);
-      else log.push(`✅ Captain valuation: ${c.first} ${c.last} → ₹${c.price / 100000}L`);
+      captainPriceMap[`${c.first} ${c.last}`.toLowerCase()] = c.price;
     }
 
-    // ── 3. Clear old captain/manager assignments ──────────────────────────────
+    // ── 2. Clear old captain/manager assignments ──────────────────────────────
     await sb.from('auction_purchases').delete().eq('season_id', SEASON_ID).in('team_role', ['captain', 'manager']);
     await sb.from('season_registrations').delete().eq('season_id', SEASON_ID).eq('registration_status', 'not_for_sale');
     log.push('✅ Cleared old assignments');
 
-    // ── 4. Assign captains + managers ─────────────────────────────────────────
+    // ── 3. Assign captains + managers (base_price included for captains) ──────
     let order = 0;
     for (const row of TEAM_ROLES) {
       const teamId = await findTeam(sb, row.team);
@@ -106,16 +100,18 @@ export async function POST() {
         let pid = await findPlayer(sb, first, last);
 
         if (!pid) {
-          // Create player if not found
           pid = uuidv4();
           const { error: ce } = await sb.from('players').insert({ id: pid, first_name: first, last_name: last, gender: role === 'manager' ? 'Female' : 'Male' });
           if (ce) { log.push(`⚠️  Create player failed: ${fullName}: ${ce.message}`); continue; }
           log.push(`  ➕ Created: ${fullName}`);
         }
 
-        // Upsert season registration
+        // For captains, include their fixed base_price so getTeamBudget can deduct it
+        const basePrice = role === 'captain' ? (captainPriceMap[fullName.toLowerCase()] ?? 0) : null;
+
+        // Upsert season registration — base_price is the captain's fixed valuation
         await sb.from('season_registrations').upsert(
-          { id: uuidv4(), season_id: SEASON_ID, player_id: pid, registration_status: 'not_for_sale' },
+          { id: uuidv4(), season_id: SEASON_ID, player_id: pid, registration_status: 'not_for_sale', base_price: basePrice },
           { onConflict: 'season_id,player_id' }
         );
 
@@ -130,7 +126,8 @@ export async function POST() {
           await sb.from('teams').update({ captain_id: pid }).eq('id', teamId);
         }
 
-        log.push(`✅ ${row.team}: ${role} → ${fullName}`);
+        const priceLabel = basePrice ? ` (₹${basePrice / 100000}L)` : '';
+        log.push(`✅ ${row.team}: ${role} → ${fullName}${priceLabel}`);
       }
     }
 
