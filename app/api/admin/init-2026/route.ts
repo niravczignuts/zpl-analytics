@@ -23,7 +23,7 @@ const TEAM_ROLES: { team: string; captain: string; manager: string }[] = [
   { team: 'Trojan Horse',    captain: 'Nihar Bhatt',     manager: 'Hemali Virda' },
   { team: 'Super Smashers',  captain: 'Nirav Chaudhari', manager: 'Rishita Katoch' },
   { team: 'Star Strikers',   captain: 'Rahul Joshi',     manager: 'Dhara Gohil' },
-  { team: 'Gray Mighty',     captain: 'Divyesh Patel',   manager: 'Priyanka Prajapati' },
+  { team: 'Grey Mighty',     captain: 'Divyesh Patel',   manager: 'Priyanka Prajapati' },
   { team: 'Tech Titans',     captain: 'Harsh Chauhan',   manager: 'Janki Radiya' },
   { team: 'Red Squad',       captain: 'Gunjan Kalariya', manager: 'Swati Bais' },
 ];
@@ -39,13 +39,22 @@ async function findPlayer(supabase: any, first: string, last: string): Promise<s
 }
 
 async function findTeam(supabase: any, name: string): Promise<string | null> {
-  const { data } = await supabase
+  // Try exact name first, then each word, then short_name
+  const { data: all } = await supabase
     .from('teams')
-    .select('id')
-    .eq('season_id', SEASON_ID)
-    .ilike('name', `%${name.split(' ')[0]}%`)
-    .limit(1);
-  return data?.[0]?.id ?? null;
+    .select('id, name, short_name')
+    .eq('season_id', SEASON_ID);
+  if (!all?.length) return null;
+
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '').replace(/grey/g, 'gray');
+  const target = norm(name);
+  const match = all.find((t: any) =>
+    norm(t.name) === target ||
+    norm(t.name).includes(target) ||
+    target.includes(norm(t.name)) ||
+    norm(t.short_name ?? '') === norm(name.split(' ').map(w => w[0]).join(''))
+  );
+  return match?.id ?? null;
 }
 
 export async function POST() {
