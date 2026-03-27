@@ -85,7 +85,9 @@ export default function SeasonManagementPage() {
     setInitError('');
     try {
       const res = await fetch('/api/admin/init-2026', { method: 'POST' });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch { throw new Error(`Server error: ${text.slice(0, 300)}`); }
       if (!res.ok) throw new Error(data.error || 'Init failed');
       setInitLog(data.log || []);
     } catch (e: any) {
