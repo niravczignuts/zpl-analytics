@@ -1,7 +1,7 @@
 'use client';
 
 import { AIContent } from '@/components/ui/AIContent';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSeason } from '@/components/providers/SeasonProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -258,40 +258,38 @@ export default function AuctionPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // Fetch full player history when a player is selected
-  useEffect(() => {
-    if (!selectedPlayer) { setPlayerDetail(null); setBidAdvice(null); setBidAdviceError(''); return; }
-    setPlayerDetailLoading(true);
-    setBidAdvice(null);
-    setBidAdviceError('');
-    fetch(`/api/players/${selectedPlayer.id}`)
-      .then(r => r.json())
-      .then(d => { setPlayerDetail(d); setPlayerDetailLoading(false); })
-      .catch(() => setPlayerDetailLoading(false));
-  }, [selectedPlayer]);
-
-  // Load owner data for selected player
+  // Fetch player detail + owner data together when a player is selected (batched into one effect)
   useEffect(() => {
     if (!selectedPlayer) {
+      setPlayerDetail(null);
+      setBidAdvice(null);
+      setBidAdviceError('');
       setOwnerData({ batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '', grade: null, should_buy: null, overall_rating: null });
       return;
     }
-    fetch(`/api/player-owner-data/${selectedPlayer.id}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d && !d.error) {
+    setPlayerDetailLoading(true);
+    setBidAdvice(null);
+    setBidAdviceError('');
+    Promise.all([
+      fetch(`/api/players/${selectedPlayer.id}`).then(r => r.json()),
+      fetch(`/api/player-owner-data/${selectedPlayer.id}`).then(r => r.json()),
+    ])
+      .then(([detail, ownerRaw]) => {
+        setPlayerDetail(detail);
+        if (ownerRaw && !ownerRaw.error) {
           setOwnerData({
-            batting_stars: d.batting_stars ?? null,
-            bowling_stars: d.bowling_stars ?? null,
-            fielding_stars: d.fielding_stars ?? null,
-            owner_note: d.owner_note ?? '',
-            grade: d.grade ?? null,
-            should_buy: d.should_buy ?? null,
-            overall_rating: d.overall_rating ?? null,
+            batting_stars: ownerRaw.batting_stars ?? null,
+            bowling_stars: ownerRaw.bowling_stars ?? null,
+            fielding_stars: ownerRaw.fielding_stars ?? null,
+            owner_note: ownerRaw.owner_note ?? '',
+            grade: ownerRaw.grade ?? null,
+            should_buy: ownerRaw.should_buy ?? null,
+            overall_rating: ownerRaw.overall_rating ?? null,
           });
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setPlayerDetailLoading(false));
   }, [selectedPlayer]);
 
   // Only real auction purchases — excludes pre-assigned captain/manager entries
@@ -299,7 +297,7 @@ export default function AuctionPage() {
 
   // ── Filtered player list ───────────────────────────────────────────────────
 
-  const filteredPlayers = availablePlayers.filter(p => {
+  const filteredPlayers = useMemo(() => availablePlayers.filter(p => {
     const name = playerFullName(p).toLowerCase();
     if (searchQuery && !name.includes(searchQuery.toLowerCase())) return false;
     if (filterGroup === 'none' && p.group_number) return false;
@@ -310,7 +308,7 @@ export default function AuctionPage() {
       if (filterGender === 'female' && g !== 'female') return false;
     }
     return true;
-  });
+  }), [availablePlayers, searchQuery, filterGroup, filterGender]);
 
   // ── Purchase handler ───────────────────────────────────────────────────────
 

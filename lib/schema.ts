@@ -219,4 +219,17 @@ CREATE TABLE IF NOT EXISTS player_owner_data (
   overall_rating REAL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Performance indexes on high-frequency FK columns
+CREATE INDEX IF NOT EXISTS idx_season_registrations_season_id ON season_registrations(season_id);
+CREATE INDEX IF NOT EXISTS idx_season_registrations_player_id ON season_registrations(player_id);
+CREATE INDEX IF NOT EXISTS idx_auction_purchases_season_id ON auction_purchases(season_id);
+CREATE INDEX IF NOT EXISTS idx_auction_purchases_team_id ON auction_purchases(team_id);
+CREATE INDEX IF NOT EXISTS idx_auction_purchases_player_id ON auction_purchases(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_season_stats_player_id ON player_season_stats(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_season_stats_season_id ON player_season_stats(season_id);
+CREATE INDEX IF NOT EXISTS idx_teams_season_id ON teams(season_id);
+CREATE INDEX IF NOT EXISTS idx_matches_season_id ON matches(season_id);
+CREATE INDEX IF NOT EXISTS idx_match_batting_match_id ON match_batting(match_id);
+CREATE INDEX IF NOT EXISTS idx_match_bowling_match_id ON match_bowling(match_id);
 `;

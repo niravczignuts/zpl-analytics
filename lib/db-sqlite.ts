@@ -419,22 +419,100 @@ export class SQLiteDB {
       ORDER BY sr.group_number, p.first_name
     `).all(seasonId, seasonId, seasonId) as PlayerWithStats[];
 
-    // Attach latest available batting/bowling/mvp stats for each player (from any season)
+    if (!players.length) return [];
+
+    // Batch-fetch ALL stats in ONE query (avoids N+1 per player)
+    const playerIds = players.map(p => p.id);
+    const placeholders = playerIds.map(() => '?').join(',');
+    const statRows = this.db.prepare(
+      `SELECT player_id, stat_type, stats_json, season_id FROM player_season_stats
+       WHERE player_id IN (${placeholders}) ORDER BY season_id DESC`
+    ).all(...playerIds) as any[];
+
+    // Group by player_id — keep only the most-recent row per stat_type
+    const statsByPlayer: Record<string, Record<string, any>> = {};
+    for (const row of statRows) {
+      if (!statsByPlayer[row.player_id]) statsByPlayer[row.player_id] = {};
+      if (!statsByPlayer[row.player_id][row.stat_type]) {
+        statsByPlayer[row.player_id][row.stat_type] = row;
+      }
+    }
+
     return players.map(p => {
-      const statRows = this.db.prepare(`
-        SELECT stat_type, stats_json, season_id FROM player_season_stats
-        WHERE player_id = ? ORDER BY season_id DESC
-      `).all(p.id) as any[];
-
-      const batting = statRows.find(r => r.stat_type === 'batting');
-      const bowling = statRows.find(r => r.stat_type === 'bowling');
-      const mvp = statRows.find(r => r.stat_type === 'mvp');
-
+      const stats = statsByPlayer[p.id] ?? {};
       return {
         ...p,
-        batting: batting ? JSON.parse(batting.stats_json) : null,
-        bowling: bowling ? JSON.parse(bowling.stats_json) : null,
-        mvp: mvp ? JSON.parse(mvp.stats_json) : null,
+        batting: stats.batting ? JSON.parse(stats.batting.stats_json) : null,
+        bowling: stats.bowling ? JSON.parse(stats.bowling.stats_json) : null,
+        mvp: stats.mvp ? JSON.parse(stats.mvp.stats_json) : null,
+      };
+    });
+  }
+
+  getAllTeamBudgets(seasonId: string): BudgetInfo[] {
+    const teams = this.db.prepare(`
+      SELECT t.id as team_id, t.captain_id, s.auction_budget, s.max_players_per_team
+      FROM teams t JOIN seasons s ON t.season_id = s.id
+      WHERE t.season_id = ?
+    `).all(seasonId) as any[];
+    if (!teams.length) return [];
+
+    // Batch-fetch captain base_prices in one query
+    const captainIds = teams.map((t: any) => t.captain_id).filter(Boolean) as string[];
+    const captainValues: Record<string, number> = {};
+    if (captainIds.length) {
+      const ph = captainIds.map(() => '?').join(',');
+      const captainRegs = this.db.prepare(
+        `SELECT player_id, base_price FROM season_registrations WHERE player_id IN (${ph}) AND season_id = ?`
+      ).all(...captainIds, seasonId) as any[];
+      for (const r of captainRegs) captainValues[r.player_id] = r.base_price ?? 0;
+    }
+
+    // Batch-fetch all purchases for the season in one query
+    const purchaseRows = this.db.prepare(`
+      SELECT ap.team_id, ap.purchase_price, ap.team_role, p.gender
+      FROM auction_purchases ap
+      JOIN players p ON ap.player_id = p.id
+      WHERE ap.season_id = ?
+    `).all(seasonId) as any[];
+
+    const purchasesByTeam: Record<string, any[]> = {};
+    for (const row of purchaseRows) {
+      if (!purchasesByTeam[row.team_id]) purchasesByTeam[row.team_id] = [];
+      purchasesByTeam[row.team_id].push(row);
+    }
+
+    return teams.map((t: any) => {
+      const totalBudget = t.auction_budget || 30000000;
+      const maxPlayers = t.max_players_per_team || 13;
+      const captainValue = t.captain_id ? (captainValues[t.captain_id] ?? 0) : 0;
+      const auctionBudget = totalBudget - captainValue;
+      const purchases = purchasesByTeam[t.team_id] ?? [];
+      const auctionRows = purchases.filter((p: any) => p.team_role === 'player');
+      const boysSpent = auctionRows
+        .filter((p: any) => (p.gender || '').toLowerCase() !== 'female')
+        .reduce((s: number, p: any) => s + (p.purchase_price || 0), 0);
+      const girlsSpent = auctionRows
+        .filter((p: any) => (p.gender || '').toLowerCase() === 'female')
+        .reduce((s: number, p: any) => s + (p.purchase_price || 0), 0);
+      const spent = boysSpent + girlsSpent;
+      const remaining = auctionBudget - spent;
+      const bought = purchases.length;
+      const slotsLeft = maxPlayers - bought;
+      return {
+        team_id: t.team_id,
+        total_budget: totalBudget,
+        captain_value: captainValue,
+        auction_budget: auctionBudget,
+        spent,
+        remaining,
+        boys_spent: boysSpent,
+        girls_spent: girlsSpent,
+        boys_remaining: remaining,
+        girls_remaining: remaining,
+        players_bought: bought,
+        max_players: maxPlayers,
+        avg_per_remaining_slot: slotsLeft > 0 ? remaining / slotsLeft : 0,
       };
     });
   }

@@ -7,13 +7,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const seasonId = searchParams.get('season_id') || '';
     if (!seasonId) return NextResponse.json({ error: 'season_id required' }, { status: 400 });
-    const teams = await db.getTeams(seasonId);
 
-    // Attach budget info
-    const teamsWithBudget = await Promise.all(teams.map(async t => {
-      const budget = await db.getTeamBudget(t.id, seasonId);
-      return { ...t, ...budget };
-    }));
+    // Batch: fetch teams + all budgets in parallel (2 queries total instead of N+1)
+    const [teams, budgets] = await Promise.all([
+      db.getTeams(seasonId),
+      db.getAllTeamBudgets(seasonId),
+    ]);
+    const budgetMap = new Map(budgets.map(b => [b.team_id, b]));
+    const teamsWithBudget = teams.map(t => ({ ...t, ...(budgetMap.get(t.id) ?? {}) }));
 
     return NextResponse.json(teamsWithBudget);
   } catch (e: any) {

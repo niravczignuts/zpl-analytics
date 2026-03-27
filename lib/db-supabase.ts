@@ -511,6 +511,71 @@ export class SupabaseDB {
     };
   }
 
+  async getAllTeamBudgets(seasonId: string): Promise<BudgetInfo[]> {
+    // Single query to get all teams + season budget
+    const { data: teams } = await this.supabase
+      .from('teams')
+      .select('id, captain_id, seasons!inner(auction_budget, max_players_per_team)')
+      .eq('season_id', seasonId);
+    if (!teams?.length) return [];
+
+    const captainIds = teams.map((t: any) => t.captain_id).filter(Boolean) as string[];
+
+    // Parallel: batch captain registrations + all purchases for the season
+    const [{ data: captainRegs }, { data: allPurchases }] = await Promise.all([
+      captainIds.length
+        ? this.supabase.from('season_registrations').select('player_id, base_price').in('player_id', captainIds).eq('season_id', seasonId)
+        : Promise.resolve({ data: [] }),
+      this.supabase.from('auction_purchases')
+        .select('team_id, purchase_price, team_role, players!player_id(gender)')
+        .eq('season_id', seasonId),
+    ]);
+
+    const captainValues: Record<string, number> = {};
+    for (const r of (captainRegs ?? [])) captainValues[(r as any).player_id] = (r as any).base_price ?? 0;
+
+    const purchasesByTeam: Record<string, any[]> = {};
+    for (const r of (allPurchases ?? [])) {
+      if (!purchasesByTeam[(r as any).team_id]) purchasesByTeam[(r as any).team_id] = [];
+      purchasesByTeam[(r as any).team_id].push(r);
+    }
+
+    return teams.map((t: any) => {
+      const seasonData = t.seasons;
+      const totalBudget = seasonData?.auction_budget || 30000000;
+      const maxPlayers = seasonData?.max_players_per_team || 13;
+      const captainValue = t.captain_id ? (captainValues[t.captain_id] ?? 0) : 0;
+      const auctionBudget = totalBudget - captainValue;
+      const purchases = purchasesByTeam[t.id] ?? [];
+      const auctionRows = purchases.filter((r: any) => r.team_role === 'player');
+      const boysSpent = auctionRows
+        .filter((r: any) => ((r.players as any)?.gender || '').toLowerCase() !== 'female')
+        .reduce((s: number, r: any) => s + (Number(r.purchase_price) || 0), 0);
+      const girlsSpent = auctionRows
+        .filter((r: any) => ((r.players as any)?.gender || '').toLowerCase() === 'female')
+        .reduce((s: number, r: any) => s + (Number(r.purchase_price) || 0), 0);
+      const spent = boysSpent + girlsSpent;
+      const remaining = auctionBudget - spent;
+      const bought = purchases.length;
+      const slotsLeft = maxPlayers - bought;
+      return {
+        team_id: t.id,
+        total_budget: totalBudget,
+        captain_value: captainValue,
+        auction_budget: auctionBudget,
+        spent,
+        remaining,
+        boys_spent: boysSpent,
+        girls_spent: girlsSpent,
+        boys_remaining: remaining,
+        girls_remaining: remaining,
+        players_bought: bought,
+        max_players: maxPlayers,
+        avg_per_remaining_slot: slotsLeft > 0 ? remaining / slotsLeft : 0,
+      };
+    });
+  }
+
   async getAuctionPurchases(seasonId: string): Promise<(AuctionPurchase & { player_name: string; team_name: string })[]> {
     const { data, error } = await this.supabase
       .from('auction_purchases')
