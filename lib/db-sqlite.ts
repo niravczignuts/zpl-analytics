@@ -351,18 +351,20 @@ export class SQLiteDB {
     // Available for auction after captain deduction
     const auctionBudget = totalBudget - captainValue;
 
-    // All purchases for this team (excluding pre-assigned captains/managers)
+    // All purchases for this team — captain/manager included for player count (their price is 0)
     const purchases = this.db.prepare(`
-      SELECT ap.purchase_price, p.gender
+      SELECT ap.purchase_price, ap.team_role, p.gender
       FROM auction_purchases ap
       JOIN players p ON ap.player_id = p.id
-      WHERE ap.team_id = ? AND ap.season_id = ? AND ap.team_role = 'player'
+      WHERE ap.team_id = ? AND ap.season_id = ?
     `).all(teamId, seasonId) as any[];
 
-    const boysSpent = purchases
+    // Only count real auction spend (captain/manager have purchase_price = 0)
+    const auctionPurchases = purchases.filter(p => p.team_role === 'player');
+    const boysSpent = auctionPurchases
       .filter(p => (p.gender || '').toLowerCase() !== 'female')
       .reduce((s: number, p: any) => s + (p.purchase_price || 0), 0);
-    const girlsSpent = purchases
+    const girlsSpent = auctionPurchases
       .filter(p => (p.gender || '').toLowerCase() === 'female')
       .reduce((s: number, p: any) => s + (p.purchase_price || 0), 0);
 

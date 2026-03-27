@@ -23,6 +23,11 @@ export default function SeasonManagementPage() {
   const [cloneResult, setCloneResult] = useState<string | null>(null);
   const [cloneError, setCloneError] = useState('');
 
+  // Init 2026 state
+  const [initing, setIniting] = useState(false);
+  const [initLog, setInitLog] = useState<string[]>([]);
+  const [initError, setInitError] = useState('');
+
   // Pre-select most recent season as clone source
   useEffect(() => {
     if (seasons.length > 0 && !cloneSourceId) {
@@ -71,6 +76,22 @@ export default function SeasonManagementPage() {
       setCloneError(e.message);
     } finally {
       setCloning(false);
+    }
+  };
+
+  const handleInit2026 = async () => {
+    setIniting(true);
+    setInitLog([]);
+    setInitError('');
+    try {
+      const res = await fetch('/api/admin/init-2026', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Init failed');
+      setInitLog(data.log || []);
+    } catch (e: any) {
+      setInitError(e.message);
+    } finally {
+      setIniting(false);
     }
   };
 
@@ -145,6 +166,45 @@ export default function SeasonManagementPage() {
           <Button onClick={createSeason} disabled={!newName.trim() || saving}
             className="bg-[#FFD700] text-black hover:bg-[#FFD700]/90 font-bold">
             {saved ? <><CheckCircle2 className="w-4 h-4 mr-2" /> Saved!</> : 'Create Season'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Initialize Season 2026 */}
+      <Card className="bg-card border-border border-amber-400/20">
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span>🏏</span> Initialize Season 2026
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Sets the 3 CR budget, 13 players per team, assigns all 8 captains with their fixed valuations and team managers.
+            Run this once after importing the 2026 player spreadsheet.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {initError && (
+            <div className="flex items-center gap-2 text-destructive text-xs bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {initError}
+            </div>
+          )}
+          {initLog.length > 0 && (
+            <div className="bg-black/40 border border-border rounded-md p-3 max-h-48 overflow-y-auto space-y-0.5">
+              {initLog.map((line, i) => (
+                <p key={i} className="text-xs font-mono text-muted-foreground">{line}</p>
+              ))}
+            </div>
+          )}
+          <Button
+            onClick={handleInit2026}
+            disabled={initing}
+            className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-400/30 font-semibold gap-2"
+          >
+            {initing ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Initializing…</>
+            ) : (
+              <><CheckCircle2 className="w-4 h-4" /> Run 2026 Initialization</>
+            )}
           </Button>
         </CardContent>
       </Card>

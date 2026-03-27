@@ -165,16 +165,16 @@ function AuctionRulesCard() {
               <p><span className="text-yellow-400 font-bold">Grp A</span> — Star (best performers)</p>
               <p><span className="text-blue-400 font-bold">Grp B</span> — Good</p>
               <p><span className="text-green-400 font-bold">Grp C</span> — Average</p>
-              <p><span className="text-pink-400 font-bold">Grp D</span> — Poor / Girls / Jr</p>
+              <p><span className="text-pink-400 font-bold">Grp D</span> — Poor</p>
             </div>
           </div>
           {/* Captain value */}
           <div>
-            <p className="font-semibold text-foreground/80 mb-1">🏆 Captain Value Rule</p>
+            <p className="font-semibold text-foreground/80 mb-1">🏆 Captain Value</p>
             <div className="pl-3 space-y-0.5">
-              <p>Captain is assigned a group. Their cost = <span className="text-amber-400">highest price paid</span> for any male player in captain's group or below.</p>
-              <p className="text-muted-foreground/60">Example: Captain in Grp B → their value = highest of Grp B / C / D players bought.</p>
-              <p>This amount is <span className="text-amber-400">deducted from boys budget</span> automatically.</p>
+              <p>Each captain has a <span className="text-amber-400">fixed pre-set valuation</span> deducted from the team's 3 CR budget.</p>
+              <p className="text-muted-foreground/60">Example: Sagar Bhayani (75 L) → team budget = 3 CR − 75 L = 2.25 CR</p>
+              <p>Captain + Manager count toward the <span className="text-amber-400">13-player squad limit</span>.</p>
             </div>
           </div>
         </div>

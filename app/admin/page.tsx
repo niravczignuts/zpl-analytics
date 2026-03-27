@@ -36,14 +36,6 @@ const ADMIN_SECTIONS = [
     glow: 'rgba(249,115,22,0.3)',
   },
   {
-    href: '/admin/team-roles',
-    icon: '⭐',
-    title: 'Captains & Managers',
-    desc: 'Pre-assign team captains and managers — marked Not For Sale, excluded from auction pool',
-    color: '#FFD700',
-    glow: 'rgba(255,215,0,0.3)',
-  },
-  {
     href: '/admin/matches/new',
     icon: '🏏',
     title: 'Schedule Match',

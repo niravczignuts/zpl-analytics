@@ -470,26 +470,27 @@ export class SupabaseDB {
     // Available for auction after captain deduction
     const auctionBudget = totalBudget - captainValue;
 
-    // All player purchases (not captain/manager) with gender
+    // All purchases — captain/manager included for player count (their price is 0)
     const { data: apRows, error: apError } = await this.supabase
       .from('auction_purchases')
-      .select('purchase_price, players!player_id(gender)')
+      .select('purchase_price, team_role, players!player_id(gender)')
       .eq('team_id', teamId)
-      .eq('season_id', seasonId)
-      .eq('team_role', 'player');
+      .eq('season_id', seasonId);
     if (apError) throw new Error(apError.message);
 
     const rows = apRows ?? [];
-    const boysSpent = rows
+    // Only count real auction spend (captain/manager have purchase_price = 0)
+    const auctionRows = rows.filter((r: any) => r.team_role === 'player');
+    const boysSpent = auctionRows
       .filter((r: any) => ((r.players as any)?.gender || '').toLowerCase() !== 'female')
       .reduce((s: number, r: any) => s + (Number(r.purchase_price) || 0), 0);
-    const girlsSpent = rows
+    const girlsSpent = auctionRows
       .filter((r: any) => ((r.players as any)?.gender || '').toLowerCase() === 'female')
       .reduce((s: number, r: any) => s + (Number(r.purchase_price) || 0), 0);
 
     const spent = boysSpent + girlsSpent;
     const remaining = auctionBudget - spent;
-    const bought = rows.length;
+    const bought = rows.length; // includes captain + manager
     const slotsLeft = maxPlayers - bought;
 
     return {
