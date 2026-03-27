@@ -844,7 +844,7 @@ export default function AuctionPage() {
                         type="text"
                         value={ownerData.owner_note}
                         onChange={e => setOwnerData(prev => ({ ...prev, owner_note: e.target.value.slice(0, 200) }))}
-                        onBlur={handleSaveOwnerData}
+                        onBlur={() => handleSaveOwnerData()}
                         placeholder="Note…"
                         className="flex-1 min-w-0 text-[10px] bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground/40 focus:ring-0"
                       />
