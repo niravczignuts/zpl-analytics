@@ -104,22 +104,32 @@ export function getRoleBadgeColor(role: string): string {
   return 'bg-gray-600';
 }
 
-export function getGroupLabel(group: number): string {
-  const labels: Record<number, string> = {
-    1: 'Star',
-    2: 'A',
-    3: 'B',
-    4: 'Girls/Junior',
-  };
-  return labels[group] || `Group ${group}`;
+// Group mapping: 1 = A (Star), 2 = B (Good), 3 = C (Average), 4 = D (Poor/Girls)
+export const GROUP_LETTER: Record<number, string> = { 1: 'A', 2: 'B', 3: 'C', 4: 'D' };
+export const GROUP_TIER: Record<number, string>   = { 1: 'Star', 2: 'Good', 3: 'Average', 4: 'Poor' };
+
+/** Short badge label — e.g. "Grp A" or "No Grp" */
+export function getGroupLabel(group: number | null | undefined): string {
+  if (!group) return 'No Grp';
+  const letter = GROUP_LETTER[group];
+  return letter ? `Grp ${letter}` : 'No Grp';
 }
 
-export function getGroupColor(group: number): string {
+/** Full descriptive label — e.g. "Group A – Star" or "No Group" */
+export function getGroupFullLabel(group: number | null | undefined): string {
+  if (!group) return 'No Group';
+  const letter = GROUP_LETTER[group];
+  const tier   = GROUP_TIER[group];
+  return letter ? `Group ${letter} – ${tier}` : 'No Group';
+}
+
+export function getGroupColor(group: number | null | undefined): string {
+  if (!group) return 'text-gray-400 bg-gray-400/10';
   const colors: Record<number, string> = {
-    1: 'text-yellow-400 bg-yellow-400/10',
-    2: 'text-blue-400 bg-blue-400/10',
-    3: 'text-green-400 bg-green-400/10',
-    4: 'text-pink-400 bg-pink-400/10',
+    1: 'text-yellow-400 bg-yellow-400/10',   // A – Star
+    2: 'text-blue-400 bg-blue-400/10',        // B – Good
+    3: 'text-green-400 bg-green-400/10',      // C – Average
+    4: 'text-pink-400 bg-pink-400/10',        // D – Poor
   };
   return colors[group] || 'text-gray-400 bg-gray-400/10';
 }

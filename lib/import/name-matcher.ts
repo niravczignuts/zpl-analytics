@@ -7,8 +7,8 @@ export function normalizeName(name: string): string {
   return name
     .toLowerCase()
     .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/[^a-z\s]/g, '');
+    .replace(/\s+/g, ' ')      // collapse multiple spaces / tabs
+    .replace(/[^a-z\s]/g, ''); // strip non-alpha
 }
 
 export function levenshtein(a: string, b: string): number {
@@ -31,7 +31,14 @@ export function similarity(a: string, b: string): number {
   const maxLen = Math.max(na.length, nb.length);
   if (maxLen === 0) return 1.0;
   const dist = levenshtein(na, nb);
-  return 1 - dist / maxLen;
+  const rawScore = 1 - dist / maxLen;
+  // Also check token-sorted similarity to handle reversed names like "Alpesh Baria" vs "Baria Alpesh"
+  const sortedA = na.split(' ').sort().join(' ');
+  const sortedB = nb.split(' ').sort().join(' ');
+  if (sortedA === sortedB) return 1.0;
+  const sortedMax = Math.max(sortedA.length, sortedB.length);
+  const sortedScore = 1 - levenshtein(sortedA, sortedB) / sortedMax;
+  return Math.max(rawScore, sortedScore);
 }
 
 export interface MatchResult {
@@ -45,13 +52,32 @@ export function findBestMatch(
   candidates: { id: string; name: string }[],
   threshold = 0.80
 ): MatchResult | null {
+  // Normalize input: trim and collapse spaces
+  const cleanName = name ? name.trim().replace(/\s+/g, ' ') : '';
+  if (!cleanName) return null;
+
   let best: MatchResult | null = null;
   for (const c of candidates) {
-    const score = similarity(name, c.name);
+    const score = similarity(cleanName, c.name);
     if (score >= threshold && (!best || score > best.score)) {
       best = { id: c.id, name: c.name, score };
     }
   }
+
+  // First-name-only boost: if input is a single word, try matching against
+  // the first token of each candidate name at a slightly higher threshold
+  if (!best && cleanName && !cleanName.includes(' ')) {
+    const singleWordThreshold = Math.max(threshold, 0.88);
+    for (const c of candidates) {
+      const firstToken = c.name.split(' ')[0];
+      if (!firstToken) continue;
+      const score = similarity(cleanName, firstToken);
+      if (score >= singleWordThreshold && (!best || score > best.score)) {
+        best = { id: c.id, name: c.name, score };
+      }
+    }
+  }
+
   return best;
 }
 

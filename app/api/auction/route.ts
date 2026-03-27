@@ -42,6 +42,15 @@ export async function POST(req: Request) {
       );
     }
 
+    // Budget validation — unified pool (girls auction first, no separate limit)
+    const budget = await db.getTeamBudget(team_id, season_id);
+    if (purchase_price > budget.remaining) {
+      return NextResponse.json(
+        { error: `Exceeds available budget. Remaining: ₹${Math.round(budget.remaining).toLocaleString('en-IN')} (captain value ₹${Math.round(budget.captain_value).toLocaleString('en-IN')} deducted from 3 CR)` },
+        { status: 400 }
+      );
+    }
+
     const purchase = await db.recordPurchase({ season_id, team_id, player_id, purchase_price, group_number, is_captain });
     return NextResponse.json(purchase, { status: 201 });
   } catch (e: any) {

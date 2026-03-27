@@ -443,35 +443,67 @@ export class SupabaseDB {
   }
 
   async getTeamBudget(teamId: string, seasonId: string): Promise<BudgetInfo> {
-    // Get season budget via teams join
+    // Get season budget and captain_id via teams join
     const { data: teamRow } = await this.supabase
       .from('teams')
-      .select('season_id, seasons!inner(auction_budget, max_players_per_team)')
+      .select('captain_id, season_id, seasons!inner(auction_budget, max_players_per_team)')
       .eq('id', teamId)
       .maybeSingle();
 
     const seasonData = (teamRow as any)?.seasons;
-    const budget = seasonData?.auction_budget || 25000000;
-    const maxPlayers = seasonData?.max_players_per_team || 12;
+    const totalBudget = seasonData?.auction_budget || 30000000;
+    const maxPlayers = seasonData?.max_players_per_team || 13;
+    const captainId = (teamRow as any)?.captain_id || null;
 
+    // Captain value = fixed base_price from season_registrations
+    let captainValue = 0;
+    if (captainId) {
+      const { data: captainReg } = await this.supabase
+        .from('season_registrations')
+        .select('base_price')
+        .eq('player_id', captainId)
+        .eq('season_id', seasonId)
+        .maybeSingle();
+      captainValue = (captainReg as any)?.base_price ?? 0;
+    }
+
+    // Available for auction after captain deduction
+    const auctionBudget = totalBudget - captainValue;
+
+    // All player purchases (not captain/manager) with gender
     const { data: apRows, error: apError } = await this.supabase
       .from('auction_purchases')
-      .select('purchase_price')
+      .select('purchase_price, players!player_id(gender)')
       .eq('team_id', teamId)
-      .eq('season_id', seasonId);
+      .eq('season_id', seasonId)
+      .eq('team_role', 'player');
     if (apError) throw new Error(apError.message);
 
     const rows = apRows ?? [];
-    const spent = rows.reduce((s: number, r: any) => s + (Number(r.purchase_price) || 0), 0);
+    const boysSpent = rows
+      .filter((r: any) => ((r.players as any)?.gender || '').toLowerCase() !== 'female')
+      .reduce((s: number, r: any) => s + (Number(r.purchase_price) || 0), 0);
+    const girlsSpent = rows
+      .filter((r: any) => ((r.players as any)?.gender || '').toLowerCase() === 'female')
+      .reduce((s: number, r: any) => s + (Number(r.purchase_price) || 0), 0);
+
+    const spent = boysSpent + girlsSpent;
+    const remaining = auctionBudget - spent;
     const bought = rows.length;
-    const remaining = budget - spent;
     const slotsLeft = maxPlayers - bought;
 
     return {
       team_id: teamId,
-      total_budget: budget,
+      total_budget: totalBudget,
+      captain_value: captainValue,
+      auction_budget: auctionBudget,
       spent,
       remaining,
+      boys_spent: boysSpent,
+      girls_spent: girlsSpent,
+      // Unified pool — no separate boys/girls limits
+      boys_remaining: remaining,
+      girls_remaining: remaining,
       players_bought: bought,
       max_players: maxPlayers,
       avg_per_remaining_slot: slotsLeft > 0 ? remaining / slotsLeft : 0,
@@ -502,12 +534,16 @@ export class SupabaseDB {
   }
 
   async getAvailablePlayers(seasonId: string): Promise<PlayerWithStats[]> {
-    // Get all purchased player_ids in this season
-    const { data: purchased } = await this.supabase
-      .from('auction_purchases')
-      .select('player_id')
-      .eq('season_id', seasonId);
-    const purchasedIds = (purchased ?? []).map((r: any) => r.player_id);
+    // Get all purchased player_ids + captain_ids for this season — all excluded from the pool
+    const [{ data: purchased }, { data: captainTeams }] = await Promise.all([
+      this.supabase.from('auction_purchases').select('player_id').eq('season_id', seasonId),
+      this.supabase.from('teams').select('captain_id').eq('season_id', seasonId).not('captain_id', 'is', null),
+    ]);
+    const captainIds = (captainTeams ?? []).map((r: any) => r.captain_id).filter(Boolean);
+    const excludedIds = [
+      ...(purchased ?? []).map((r: any) => r.player_id),
+      ...captainIds,
+    ].filter(Boolean);
 
     let q = this.supabase
       .from('players')
@@ -518,8 +554,8 @@ export class SupabaseDB {
       .eq('season_registrations.season_id', seasonId)
       .neq('season_registrations.registration_status', 'not_for_sale');
 
-    if (purchasedIds.length > 0) {
-      q = q.not('id', 'in', `(${purchasedIds.join(',')})`);
+    if (excludedIds.length > 0) {
+      q = q.not('id', 'in', `(${excludedIds.join(',')})`);
     }
 
     const { data, error } = await q;

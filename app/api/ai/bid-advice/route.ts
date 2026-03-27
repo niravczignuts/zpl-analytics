@@ -81,7 +81,7 @@ Combine all signals into one Max Bid number.
 ## ZPL 2025 PRICE DATABASE — your ground truth. Do NOT invent prices outside this list.
 
 GROUP LEGEND:
-Group 1 = Premium/Star (typically 50L+) | Group 2 = Strong (25–65L) | Group 3 = Mid-tier (12–25L) | Group 4 = Lower-tier (1.5–20L) | No Group = Utility/Support (1–10L)
+Group A – Star (typically 50L+) | Group B – Good (25–65L) | Group C – Average (12–25L) | Group D – Poor (1.5–20L) | No Group = Utility/Support (1–10L)
 
 TROJAN HORSE: Nihar Bhatt|G2|37.5L, Apeksha Raval|NoG|15.0L, Mushrat Saiyad|NoG|4.5L, Ravi Jagani|G1|66.0L, Pratham Pathak|G3|34.0L, Vivek Yadav|NoG|7.5L, Ravi Thakor|G2|37.5L, Jasrajsinh Jethwa|G4|15.0L, Jay Patel|NoG|26.5L, Chetan Singadia|NoG|1.0L, Parth Dabhi|NoG|1.0L, Karan Bharakhda|NoG|1.0L
 THE MAVERICKS: Ishan Bramhbhatt|G1|31.5L, Rinkal Patel|NoG|33.0L, Rushita Vagasiya|NoG|2.0L, Vishvam Shah|G3|12.0L, Vaibhav Parmar|G3|16.5L, Naitik Vala|NoG|5.5L, Vishal Gadhiya|G2|31.5L, Ashish Kumar Patel|G3|20.5L, Ankit Pithiya|G3|20.5L, Jaychand Maurya|G3|17.5L, Dhrumil Amrutiya|G3|22.5L, Harsh Kanzariya|NoG|1.0L
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       .slice(-15)
       .map(p => ({
         name: p.player_name || 'Unknown',
-        group: p.group_number ? `Group ${p.group_number}` : 'No Group',
+        group: p.group_number ? `Group ${({ 1: 'A', 2: 'B', 3: 'C', 4: 'D' } as Record<number, string>)[p.group_number] ?? p.group_number}` : 'No Group',
         sold_price_lakhs: Number((p.purchase_price / 100000).toFixed(1)),
       }));
 

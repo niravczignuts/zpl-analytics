@@ -7,8 +7,13 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   Upload, CheckCircle2, AlertCircle, Loader2, FileText, X,
-  ChevronRight, Database, Info,
+  ChevronRight, Database, Info, Calendar,
 } from 'lucide-react';
+
+const STATS_TYPES = ['batting', 'bowling', 'fielding', 'mvp'];
+const SEASON_TYPES = ['registration', 'auction'];
+
+const STAT_YEARS = [2024, 2025, 2026];
 
 const FILE_TYPES = [
   {
@@ -75,6 +80,7 @@ export default function ImportPage() {
   const { currentSeasonId, seasons } = useSeason();
   const [fileType, setFileType] = useState('registration');
   const [seasonId, setSeasonId] = useState('');
+  const [statYear, setStatYear] = useState<number>(2025);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -86,8 +92,14 @@ export default function ImportPage() {
     if (currentSeasonId && !seasonId) setSeasonId(currentSeasonId);
   }, [currentSeasonId]);
 
+  const isStatsType = STATS_TYPES.includes(fileType);
+  // The value sent as season_id to the API:
+  // - stats types: send the year string (e.g. "2025") — API will auto-find/create
+  // - registration/auction: send the full season UUID/id from the dropdown
+  const effectiveSeasonId = isStatsType ? String(statYear) : seasonId;
+
   const handleUpload = async () => {
-    if (!file || !fileType || !seasonId) return;
+    if (!file || !fileType || !effectiveSeasonId) return;
     setUploading(true);
     setResult(null);
     setError('');
@@ -96,7 +108,7 @@ export default function ImportPage() {
       const form = new FormData();
       form.append('file', file);
       form.append('type', fileType);
-      form.append('season_id', seasonId);
+      form.append('season_id', effectiveSeasonId);
       const res = await fetch('/api/import', { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -120,33 +132,11 @@ export default function ImportPage() {
         <p className="text-muted-foreground text-sm">Upload CSV or XLSX files to update the database for any season</p>
       </div>
 
-      {/* Step 1 — Select Season */}
+      {/* Step 1 — Select File Type */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
             <span className="w-5 h-5 rounded-full bg-[#FFD700] text-black text-xs font-bold flex items-center justify-center">1</span>
-            Select Target Season
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <select
-            value={seasonId}
-            onChange={e => setSeasonId(e.target.value)}
-            className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FFD700]"
-          >
-            <option value="">Choose a season…</option>
-            {seasons.map(s => (
-              <option key={s.id} value={s.id}>{s.name} ({s.year})</option>
-            ))}
-          </select>
-        </CardContent>
-      </Card>
-
-      {/* Step 2 — Select File Type */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-[#FFD700] text-black text-xs font-bold flex items-center justify-center">2</span>
             Select File Type
           </CardTitle>
         </CardHeader>
@@ -166,6 +156,9 @@ export default function ImportPage() {
               >
                 <p className="font-semibold text-sm flex items-center gap-2">
                   <span>{t.icon}</span> {t.label}
+                  {STATS_TYPES.includes(t.value) && (
+                    <span className="ml-auto text-[10px] font-normal text-[#FFD700]/60 bg-[#FFD700]/10 px-1.5 py-0.5 rounded">year picker</span>
+                  )}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">{t.desc}</p>
               </button>
@@ -182,6 +175,54 @@ export default function ImportPage() {
         </CardContent>
       </Card>
 
+      {/* Step 2 — Season or Year picker */}
+      <Card className={cn('border', isStatsType ? 'bg-[#FFD700]/5 border-[#FFD700]/30' : 'bg-card border-border')}>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-[#FFD700] text-black text-xs font-bold flex items-center justify-center">2</span>
+            {isStatsType ? (
+              <span className="flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-[#FFD700]" />
+                Select Season Year
+                <span className="text-xs font-normal text-[#FFD700]/70">(stats will be linked to this year's season)</span>
+              </span>
+            ) : 'Select Target Season'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isStatsType ? (
+            <div className="flex gap-2">
+              {STAT_YEARS.map(year => (
+                <button
+                  key={year}
+                  type="button"
+                  onClick={() => setStatYear(year)}
+                  className={cn(
+                    'flex-1 py-3 rounded-lg border text-sm font-bold transition-all',
+                    statYear === year
+                      ? 'border-[#FFD700] bg-[#FFD700] text-black'
+                      : 'border-border bg-secondary hover:border-[#FFD700]/50 text-foreground'
+                  )}
+                >
+                  {year}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <select
+              value={seasonId}
+              onChange={e => setSeasonId(e.target.value)}
+              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FFD700]"
+            >
+              <option value="">Choose a season…</option>
+              {seasons.map(s => (
+                <option key={s.id} value={s.id}>{s.name} ({s.year})</option>
+              ))}
+            </select>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Step 3 — Upload File */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-3">
@@ -191,7 +232,7 @@ export default function ImportPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Drop zone — IMPORTANT: relative + overflow-hidden so the input is contained here */}
+          {/* Drop zone */}
           <div className={cn(
             'relative overflow-hidden border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer',
             file ? 'border-[#FFD700]/40 bg-[#FFD700]/5' : 'border-border hover:border-[#FFD700]/30 hover:bg-[#FFD700]/5'
@@ -218,10 +259,9 @@ export default function ImportPage() {
                 <p className="text-xs text-muted-foreground/60 mt-1">Accepts {selected?.accept}</p>
               </>
             )}
-            {/* File input is scoped inside this relative div */}
             <input
               type="file"
-              key={fileType} // reset input when file type changes
+              key={fileType}
               accept={selected?.accept}
               onChange={e => setFile(e.target.files?.[0] || null)}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
@@ -230,16 +270,16 @@ export default function ImportPage() {
 
           <Button
             onClick={handleUpload}
-            disabled={!file || !seasonId || uploading}
+            disabled={!file || (!isStatsType && !seasonId) || uploading}
             className="w-full bg-[#FFD700] text-black hover:bg-[#FFD700]/90 font-bold"
           >
             {uploading
               ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Importing…</>
-              : <><Upload className="w-4 h-4 mr-2" /> Import {selected?.label}</>
+              : <><Upload className="w-4 h-4 mr-2" /> Import {selected?.label} {isStatsType ? `(${statYear})` : ''}</>
             }
           </Button>
 
-          {!seasonId && (
+          {!isStatsType && !seasonId && (
             <p className="text-xs text-amber-400 text-center flex items-center justify-center gap-1">
               <AlertCircle className="w-3 h-3" /> Select a season above before importing
             </p>

@@ -183,9 +183,16 @@ export interface Innings {
 
 export interface BudgetInfo {
   team_id: string;
-  total_budget: number;
-  spent: number;
-  remaining: number;
+  total_budget: number;         // Fixed: 3 CR
+  captain_value: number;        // Fixed captain valuation (deducted upfront)
+  auction_budget: number;       // total_budget - captain_value (available for bidding)
+  spent: number;                // boys_spent + girls_spent
+  remaining: number;            // auction_budget - spent
+  boys_spent: number;
+  girls_spent: number;
+  // boys_remaining / girls_remaining = remaining (unified pool, no separate limit)
+  boys_remaining: number;
+  girls_remaining: number;
   players_bought: number;
   max_players: number;
   avg_per_remaining_slot: number;

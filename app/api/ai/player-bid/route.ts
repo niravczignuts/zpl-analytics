@@ -137,7 +137,7 @@ Role: ${playerRole || 'Unknown'}
 Gender: ${player.gender || 'Unknown'}
 Batting: ${player.batting_hand || 'N/A'} | Bowling: ${player.bowling_style || 'N/A'}
 Base Price: ${L(basePrice)}
-Auction Group: ${reg?.group_number ?? 'Unknown'}
+Auction Group: ${reg?.group_number ? `Group ${{ 1: 'A', 2: 'B', 3: 'C', 4: 'D' }[reg.group_number as number] || reg.group_number} – ${{ 1: 'Star', 2: 'Good', 3: 'Average', 4: 'Poor' }[reg.group_number as number] || ''}` : 'No Group'}
 
 Historical Performance (ZPL 2024 & 2025):
 ${statsBlock}

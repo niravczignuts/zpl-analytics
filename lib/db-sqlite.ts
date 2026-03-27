@@ -75,6 +75,16 @@ function getDb(): Database.Database {
   if (!podCols.includes('grade')) _db.exec("ALTER TABLE player_owner_data ADD COLUMN grade TEXT");
   if (!podCols.includes('should_buy')) _db.exec("ALTER TABLE player_owner_data ADD COLUMN should_buy INTEGER");
   if (!podCols.includes('overall_rating')) _db.exec("ALTER TABLE player_owner_data ADD COLUMN overall_rating REAL");
+  // Migrations: boys_budget / girls_budget on seasons
+  const sCols = (_db.prepare("PRAGMA table_info(seasons)").all() as any[]).map(c => c.name);
+  if (!sCols.includes('boys_budget')) {
+    _db.exec("ALTER TABLE seasons ADD COLUMN boys_budget REAL DEFAULT 23000000");
+    _db.exec("UPDATE seasons SET boys_budget = 23000000 WHERE boys_budget IS NULL");
+  }
+  if (!sCols.includes('girls_budget')) {
+    _db.exec("ALTER TABLE seasons ADD COLUMN girls_budget REAL DEFAULT 2000000");
+    _db.exec("UPDATE seasons SET girls_budget = 2000000 WHERE girls_budget IS NULL");
+  }
   return _db;
 }
 
@@ -94,13 +104,16 @@ export class SQLiteDB {
     return (this.db.prepare('SELECT * FROM seasons ORDER BY year DESC LIMIT 1').get() as Season) || null;
   }
 
-  createSeason(data: Partial<Season>): Season {
+  createSeason(data: Partial<Season> & { boys_budget?: number; girls_budget?: number }): Season {
     const id = data.id || uuidv4();
     this.db.prepare(`
-      INSERT OR REPLACE INTO seasons (id, name, year, status, auction_budget, max_players_per_team, max_overs, max_bowler_overs, rules_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO seasons (id, name, year, status, auction_budget, boys_budget, girls_budget, max_players_per_team, max_overs, max_bowler_overs, rules_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, data.name, data.year, data.status || 'upcoming',
-      data.auction_budget ?? 25000000, data.max_players_per_team ?? 12,
+      data.auction_budget ?? 25000000,
+      data.boys_budget ?? 23000000,
+      data.girls_budget ?? 2000000,
+      data.max_players_per_team ?? 12,
       data.max_overs ?? 12, data.max_bowler_overs ?? 3, data.rules_json || null);
     return this.getSeasonById(id)!;
   }
@@ -318,26 +331,58 @@ export class SQLiteDB {
 
   getTeamBudget(teamId: string, seasonId: string): BudgetInfo {
     const season = this.db.prepare(
-      'SELECT auction_budget, max_players_per_team FROM seasons s JOIN teams t ON t.season_id = s.id WHERE t.id = ?'
+      `SELECT s.auction_budget, s.max_players_per_team, t.captain_id
+       FROM seasons s JOIN teams t ON t.season_id = s.id WHERE t.id = ?`
     ).get(teamId) as any;
-    const budget = season?.auction_budget || 25000000;
-    const maxPlayers = season?.max_players_per_team || 12;
 
-    const result = this.db.prepare(`
-      SELECT COUNT(*) as count, COALESCE(SUM(purchase_price), 0) as spent
-      FROM auction_purchases WHERE team_id = ? AND season_id = ?
-    `).get(teamId, seasonId) as any;
+    const totalBudget = season?.auction_budget || 30000000;
+    const maxPlayers = season?.max_players_per_team || 13;
+    const captainId = season?.captain_id || null;
 
-    const spent = result?.spent || 0;
-    const bought = result?.count || 0;
-    const remaining = budget - spent;
+    // Captain value = fixed base_price from season_registrations
+    let captainValue = 0;
+    if (captainId) {
+      const captainReg = this.db.prepare(
+        'SELECT base_price FROM season_registrations WHERE player_id = ? AND season_id = ?'
+      ).get(captainId, seasonId) as any;
+      captainValue = captainReg?.base_price ?? 0;
+    }
+
+    // Available for auction after captain deduction
+    const auctionBudget = totalBudget - captainValue;
+
+    // All purchases for this team (excluding pre-assigned captains/managers)
+    const purchases = this.db.prepare(`
+      SELECT ap.purchase_price, p.gender
+      FROM auction_purchases ap
+      JOIN players p ON ap.player_id = p.id
+      WHERE ap.team_id = ? AND ap.season_id = ? AND ap.team_role = 'player'
+    `).all(teamId, seasonId) as any[];
+
+    const boysSpent = purchases
+      .filter(p => (p.gender || '').toLowerCase() !== 'female')
+      .reduce((s: number, p: any) => s + (p.purchase_price || 0), 0);
+    const girlsSpent = purchases
+      .filter(p => (p.gender || '').toLowerCase() === 'female')
+      .reduce((s: number, p: any) => s + (p.purchase_price || 0), 0);
+
+    const spent = boysSpent + girlsSpent;
+    const remaining = auctionBudget - spent;
+    const bought = purchases.length;
     const slotsLeft = maxPlayers - bought;
 
     return {
       team_id: teamId,
-      total_budget: budget,
+      total_budget: totalBudget,
+      captain_value: captainValue,
+      auction_budget: auctionBudget,
       spent,
       remaining,
+      boys_spent: boysSpent,
+      girls_spent: girlsSpent,
+      // Unified pool — no separate boys/girls limits
+      boys_remaining: remaining,
+      girls_remaining: remaining,
       players_bought: bought,
       max_players: maxPlayers,
       avg_per_remaining_slot: slotsLeft > 0 ? remaining / slotsLeft : 0,
@@ -358,16 +403,19 @@ export class SQLiteDB {
 
   getAvailablePlayers(seasonId: string): PlayerWithStats[] {
     // Join with ALL seasons' stats (not just current) so auction page can show historical performance
+    // Exclude: already purchased players, not_for_sale registrations, AND captains assigned to any team
     const players = this.db.prepare(`
       SELECT p.*, sr.group_number, sr.base_price, sr.is_captain_eligible, sr.registration_status
       FROM players p
       JOIN season_registrations sr ON p.id = sr.player_id AND sr.season_id = ?
       WHERE p.id NOT IN (
         SELECT player_id FROM auction_purchases WHERE season_id = ?
+        UNION
+        SELECT captain_id FROM teams WHERE season_id = ? AND captain_id IS NOT NULL
       )
       AND sr.registration_status != 'not_for_sale'
       ORDER BY sr.group_number, p.first_name
-    `).all(seasonId, seasonId) as PlayerWithStats[];
+    `).all(seasonId, seasonId, seasonId) as PlayerWithStats[];
 
     // Attach latest available batting/bowling/mvp stats for each player (from any season)
     return players.map(p => {

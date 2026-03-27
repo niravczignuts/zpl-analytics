@@ -234,6 +234,12 @@ export default function PlayerProfilePage() {
 
         {/* Season Stats */}
         <div className="lg:col-span-2">
+          {Object.keys(player.stats || {}).length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 bg-card border border-border rounded-lg text-center p-6">
+              <p className="text-muted-foreground text-sm font-medium">No past performance data</p>
+              <p className="text-muted-foreground/60 text-xs mt-1">No stats found for 2024 or 2025 seasons</p>
+            </div>
+          ) : (
           <Tabs defaultValue={Object.keys(player.stats || {})[0] || seasons[0]?.id || ''}>
             <TabsList className="bg-card border border-border mb-4">
               {seasons.filter(s => player.stats?.[s.id]).map(s => (
@@ -349,6 +355,7 @@ export default function PlayerProfilePage() {
               );
             })}
           </Tabs>
+          )}
         </div>
       </div>
 

@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
+const STORAGE_KEY = 'zpl_current_season_id';
+
 interface SeasonContextType {
   currentSeasonId: string;
   setCurrentSeasonId: (id: string) => void;
@@ -15,8 +17,13 @@ const SeasonContext = createContext<SeasonContextType>({
 });
 
 export function SeasonProvider({ children }: { children: React.ReactNode }) {
-  const [currentSeasonId, setCurrentSeasonId] = useState('season-2026');
+  const [currentSeasonId, _setCurrentSeasonId] = useState('season-2026');
   const [seasons, setSeasons] = useState<{ id: string; name: string; year: number; status: string }[]>([]);
+
+  const setCurrentSeasonId = (id: string) => {
+    _setCurrentSeasonId(id);
+    try { localStorage.setItem(STORAGE_KEY, id); } catch {}
+  };
 
   useEffect(() => {
     fetch('/api/seasons')
@@ -24,8 +31,11 @@ export function SeasonProvider({ children }: { children: React.ReactNode }) {
       .then((data: { id: string; name: string; year: number; status: string }[]) => {
         if (!Array.isArray(data) || !data.length) return;
         setSeasons(data);
-        // Seasons are returned ORDER BY year DESC — always default to the latest
-        setCurrentSeasonId(data[0].id);
+        // Restore from localStorage; fall back to newest season
+        let saved: string | null = null;
+        try { saved = localStorage.getItem(STORAGE_KEY); } catch {}
+        const validSaved = saved && data.find(s => s.id === saved);
+        _setCurrentSeasonId(validSaved ? saved! : data[0].id);
       })
       .catch(console.error);
   }, []);

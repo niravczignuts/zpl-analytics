@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { Plus, CheckCircle2, Copy, Loader2, AlertCircle } from 'lucide-react';
 
 export default function SeasonManagementPage() {
-  const { seasons, setCurrentSeasonId } = useSeason();
+  const { seasons, currentSeasonId, setCurrentSeasonId } = useSeason();
   const [newName, setNewName] = useState('');
   const [newYear, setNewYear] = useState(new Date().getFullYear() + 1);
   const [saving, setSaving] = useState(false);
@@ -92,21 +92,36 @@ export default function SeasonManagementPage() {
       <Card className="bg-card border-border">
         <CardHeader><CardTitle className="text-sm">Seasons</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          {seasons.map(s => (
-            <div key={s.id} className="flex items-center justify-between p-3 bg-secondary rounded-lg">
-              <div>
-                <p className="font-semibold">{s.name}</p>
-                <p className="text-xs text-muted-foreground">{s.id}</p>
+          {seasons.map(s => {
+            const isActive = s.id === currentSeasonId;
+            return (
+              <div key={s.id} className={cn(
+                'flex items-center justify-between p-3 rounded-lg border transition-colors',
+                isActive ? 'bg-[#FFD700]/10 border-[#FFD700]/40' : 'bg-secondary border-transparent'
+              )}>
+                <div>
+                  <p className="font-semibold flex items-center gap-2">
+                    {s.name}
+                    {isActive && <span className="text-[10px] font-bold bg-[#FFD700] text-black px-1.5 py-0.5 rounded">ACTIVE</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{s.id}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge className={cn('text-xs', statusColor(s.status))}>{s.status}</Badge>
+                  {isActive ? (
+                    <Button size="sm" disabled className="text-xs bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/40 cursor-default">
+                      <CheckCircle2 className="w-3 h-3 mr-1" /> Active
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => setCurrentSeasonId(s.id)}
+                      className="text-xs border-[#FFD700]/30 hover:bg-[#FFD700]/10">
+                      Select
+                    </Button>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge className={cn('text-xs', statusColor(s.status))}>{s.status}</Badge>
-                <Button size="sm" variant="outline" onClick={() => setCurrentSeasonId(s.id)}
-                  className="text-xs border-[#FFD700]/30 hover:bg-[#FFD700]/10">
-                  Select
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {seasons.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-2">No seasons yet</p>
           )}

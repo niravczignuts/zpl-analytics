@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import {
   formatCurrency,
   getGroupLabel,
+  getGroupFullLabel,
   getGroupColor,
   getRoleIcon,
   getRoleBadgeColor,
@@ -64,8 +65,14 @@ interface TeamWithBudget {
   color_secondary: string | null;
   logo_url: string | null;
   total_budget: number;
+  captain_value: number;
+  auction_budget: number;
   spent: number;
   remaining: number;
+  boys_spent: number;
+  girls_spent: number;
+  boys_remaining: number;
+  girls_remaining: number;
   players_bought: number;
   max_players: number;
   avg_per_remaining_slot: number;
@@ -121,6 +128,58 @@ function playerFullName(p: AvailablePlayer) {
 function Spinner({ className }: { className?: string }) {
   return (
     <div className={cn('w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin', className)} />
+  );
+}
+
+// ── Auction Rules Card ──────────────────────────────────────────────────────────
+
+function AuctionRulesCard() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <AlertCircle className="w-3.5 h-3.5 text-[#FFD700]/70" />
+          Auction Rules
+        </span>
+        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-3 text-[10px] leading-relaxed text-muted-foreground border-t border-border/40">
+          {/* Budget */}
+          <div className="pt-3">
+            <p className="font-semibold text-foreground/80 mb-1">💰 Total Budget per Team: ₹2.50 Cr</p>
+            <div className="pl-3 space-y-0.5">
+              <p>• <span className="text-blue-400">Boys:</span> ₹2.30 Cr</p>
+              <p>• <span className="text-pink-400">Girls:</span> ₹20 L base (+ any unspent boys budget)</p>
+              <p className="text-muted-foreground/60">Girls auction happens last. Remaining boys budget carries over to girls.</p>
+            </div>
+          </div>
+          {/* Groups */}
+          <div>
+            <p className="font-semibold text-foreground/80 mb-1">👥 Player Groups</p>
+            <div className="pl-3 space-y-0.5">
+              <p><span className="text-yellow-400 font-bold">Grp A</span> — Star (best performers)</p>
+              <p><span className="text-blue-400 font-bold">Grp B</span> — Good</p>
+              <p><span className="text-green-400 font-bold">Grp C</span> — Average</p>
+              <p><span className="text-pink-400 font-bold">Grp D</span> — Poor / Girls / Jr</p>
+            </div>
+          </div>
+          {/* Captain value */}
+          <div>
+            <p className="font-semibold text-foreground/80 mb-1">🏆 Captain Value Rule</p>
+            <div className="pl-3 space-y-0.5">
+              <p>Captain is assigned a group. Their cost = <span className="text-amber-400">highest price paid</span> for any male player in captain's group or below.</p>
+              <p className="text-muted-foreground/60">Example: Captain in Grp B → their value = highest of Grp B / C / D players bought.</p>
+              <p>This amount is <span className="text-amber-400">deducted from boys budget</span> automatically.</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -235,12 +294,16 @@ export default function AuctionPage() {
       .catch(() => {});
   }, [selectedPlayer]);
 
+  // Only real auction purchases — excludes pre-assigned captain/manager entries
+  const auctionPurchases = purchases.filter(p => !p.team_role || p.team_role === 'player');
+
   // ── Filtered player list ───────────────────────────────────────────────────
 
   const filteredPlayers = availablePlayers.filter(p => {
     const name = playerFullName(p).toLowerCase();
     if (searchQuery && !name.includes(searchQuery.toLowerCase())) return false;
-    if (filterGroup !== 'all' && String(p.group_number) !== filterGroup) return false;
+    if (filterGroup === 'none' && p.group_number) return false;
+    if (filterGroup !== 'all' && filterGroup !== 'none' && String(p.group_number) !== filterGroup) return false;
     if (filterGender !== 'all') {
       const g = (p.gender || '').toLowerCase();
       if (filterGender === 'male' && g !== 'male') return false;
@@ -263,7 +326,7 @@ export default function AuctionPage() {
     }
     const team = teams.find(t => t.id === selectedTeamId);
     if (team && price > team.remaining) {
-      setPurchaseError(`Exceeds ${team.name}'s remaining budget of ${formatCurrency(team.remaining)}.`);
+      setPurchaseError(`Exceeds available budget. Remaining: ${formatCurrency(Math.max(0, team.remaining))}`);
       return;
     }
 
@@ -305,7 +368,8 @@ export default function AuctionPage() {
   // ── Undo last purchase ─────────────────────────────────────────────────────
 
   const handleUndoLast = async () => {
-    const last = [...purchases].sort((a, b) => 0).pop();
+    // Only undo real auction purchases — never touch captain/manager pre-assignments
+    const last = [...auctionPurchases].pop();
     if (!last) return;
     try {
       await fetch(`/api/auction/${last.id}`, { method: 'DELETE' });
@@ -504,10 +568,11 @@ export default function AuctionPage() {
               className="flex-1 bg-background border border-border text-xs rounded-md px-2 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]"
             >
               <option value="all">All Groups</option>
-              <option value="1">Group 1 – Star</option>
-              <option value="2">Group 2 – A</option>
-              <option value="3">Group 3 – B</option>
-              <option value="4">Group 4 – Girls/Jr</option>
+              <option value="1">Group A – Star</option>
+              <option value="2">Group B – Good</option>
+              <option value="3">Group C – Average</option>
+              <option value="4">Group D – Poor</option>
+              <option value="none">No Group</option>
             </select>
             <select
               value={filterGender}
@@ -606,11 +671,11 @@ export default function AuctionPage() {
               Live Auction Board
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {purchases.length} players sold · {availablePlayers.length} remaining
+              {auctionPurchases.length} players sold · {availablePlayers.length} remaining
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {purchases.length > 0 && (
+            {auctionPurchases.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -734,7 +799,7 @@ export default function AuctionPage() {
                     <div className="space-y-2">
                       {Object.entries(playerDetail.stats as Record<string, any>).map(([sid, s]: [string, any]) => (
                         <div key={sid} className="bg-background/50 rounded-lg border border-border/50 px-3 py-2 text-xs">
-                          <p className="text-[10px] text-[#FFD700]/80 font-semibold mb-1.5 uppercase tracking-wide">Season {sid.slice(0, 4)}</p>
+                          <p className="text-[10px] text-[#FFD700]/80 font-semibold mb-1.5 uppercase tracking-wide">ZPL {sid.startsWith('season-') ? sid.slice(7) : sid}</p>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                             {s.batting && (
                               <>
@@ -991,7 +1056,7 @@ export default function AuctionPage() {
                           <option value="">Select team…</option>
                           {teams.map(t => (
                             <option key={t.id} value={t.id}>
-                              {t.name} ({formatCurrency(t.remaining)} left)
+                              {t.name} ({formatCurrency(Math.max(0, t.remaining))} left)
                             </option>
                           ))}
                         </select>
@@ -1055,6 +1120,9 @@ export default function AuctionPage() {
             </div>
           )}
 
+          {/* ── Auction Rules Summary ────────────────────────────────── */}
+          <AuctionRulesCard />
+
           {/* Team budget grid */}
           <div>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -1063,11 +1131,11 @@ export default function AuctionPage() {
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {teams.map(team => {
-                const pct = team.total_budget > 0
-                  ? ((team.remaining / team.total_budget) * 100)
+                const boysPct = team.auction_budget > 0
+                  ? Math.max(0, Math.min(100, (team.remaining / team.auction_budget) * 100))
                   : 0;
-                const healthColor = getBudgetHealthColor(pct);
-                const healthBg = getBudgetHealthBg(pct);
+                const healthColor = getBudgetHealthColor(boysPct);
+                const healthBg = getBudgetHealthBg(boysPct);
                 const slotsLeft = team.max_players - team.players_bought;
                 const teamColor = team.color_primary || '#FFD700';
                 return (
@@ -1081,13 +1149,12 @@ export default function AuctionPage() {
                     )}
                     onClick={() => setSelectedTeamId(team.id)}
                   >
+                    {/* Team header */}
                     <div className="flex items-center gap-2 mb-2">
-                      {/* Team logo or color dot */}
                       <div className="w-6 h-6 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-[10px] font-black"
                         style={{ backgroundColor: teamColor, color: '#fff' }}>
                         {team.logo_url ? (
-                          <img src={team.logo_url} alt={team.name}
-                            className="w-full h-full object-contain p-0.5" />
+                          <img src={team.logo_url} alt={team.name} className="w-full h-full object-contain p-0.5" />
                         ) : (
                           <span>{(team.short_name || team.name).slice(0, 2).toUpperCase()}</span>
                         )}
@@ -1097,27 +1164,56 @@ export default function AuctionPage() {
                         <CheckCircle2 className="w-3 h-3 text-[#FFD700] ml-auto shrink-0" />
                       )}
                     </div>
+
+                    {/* Budget bar */}
                     <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-2">
-                      <div
-                        className={cn('h-full rounded-full transition-all', healthBg)}
-                        style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
-                      />
+                      <div className={cn('h-full rounded-full transition-all', healthBg)}
+                        style={{ width: `${boysPct}%` }} />
                     </div>
-                    <div className="grid grid-cols-2 gap-x-2 text-[10px]">
-                      <div>
-                        <span className="text-muted-foreground">Remaining</span>
-                        <p className={cn('font-bold', healthColor)}>{formatCurrency(team.remaining)}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Players</span>
-                        <p className="font-bold">{team.players_bought}/{team.max_players}</p>
-                      </div>
-                      <div className="col-span-2 mt-1">
-                        <span className="text-muted-foreground">Avg/slot: </span>
-                        <span className="font-medium">
-                          {slotsLeft > 0 ? formatCurrency(Math.round(team.remaining / slotsLeft)) : '—'}
+
+                    {/* Budget breakdown */}
+                    <div className="space-y-1.5 text-[10px]">
+                      {/* Remaining */}
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground font-semibold">Remaining</span>
+                        <span className={cn('font-bold', healthColor)}>
+                          {formatCurrency(Math.max(0, team.remaining))}
                         </span>
                       </div>
+                      {/* Captain deduction */}
+                      {team.captain_value > 0 && (
+                        <div className="flex justify-between items-center pl-2 border-l-2 border-amber-400/30">
+                          <span className="text-amber-400/70">Captain</span>
+                          <span className="text-amber-400/90 font-medium">−{formatCurrency(team.captain_value)}</span>
+                        </div>
+                      )}
+                      {/* Girls spent */}
+                      {team.girls_spent > 0 && (
+                        <div className="flex justify-between items-center pl-2 border-l-2 border-pink-400/30">
+                          <span className="text-pink-400/70">👩 Girls spent</span>
+                          <span className="text-pink-400/90 font-medium">−{formatCurrency(team.girls_spent)}</span>
+                        </div>
+                      )}
+                      {/* Boys spent */}
+                      {team.boys_spent > 0 && (
+                        <div className="flex justify-between items-center pl-2 border-l-2 border-blue-400/30">
+                          <span className="text-blue-400/70">👨 Boys spent</span>
+                          <span className="text-blue-400/90 font-medium">−{formatCurrency(team.boys_spent)}</span>
+                        </div>
+                      )}
+                      {/* Players / slots */}
+                      <div className="flex justify-between pt-0.5 border-t border-border/40">
+                        <span className="text-muted-foreground">Players</span>
+                        <span className="font-bold">{team.players_bought}/{team.max_players}</span>
+                      </div>
+                      {slotsLeft > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Avg/slot</span>
+                          <span className="font-medium">
+                            {formatCurrency(Math.round(team.remaining / slotsLeft))}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1160,16 +1256,34 @@ export default function AuctionPage() {
           </div>
 
           {aiTargetTeam && (
-            <div className="rounded-lg border border-border bg-background/40 p-3 text-xs space-y-1">
+            <div className="rounded-lg border border-border bg-background/40 p-3 text-xs space-y-1.5">
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: aiTargetTeam.color_primary || '#FFD700' }} />
                 <span className="font-semibold">{aiTargetTeam.name}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
-                <span>Budget left:</span>
-                <span className="font-medium text-foreground">{formatCurrency(aiTargetTeam.remaining)}</span>
+                <span>Budget remaining:</span>
+                <span className="font-medium text-green-300">{formatCurrency(Math.max(0, aiTargetTeam.remaining))}</span>
               </div>
-              <div className="flex justify-between text-muted-foreground">
+              {aiTargetTeam.captain_value > 0 && (
+                <div className="flex justify-between text-muted-foreground pl-2">
+                  <span className="text-amber-400/70">Captain:</span>
+                  <span className="text-amber-400">−{formatCurrency(aiTargetTeam.captain_value)}</span>
+                </div>
+              )}
+              {aiTargetTeam.girls_spent > 0 && (
+                <div className="flex justify-between text-muted-foreground pl-2">
+                  <span className="text-pink-400/70">👩 Girls spent:</span>
+                  <span className="text-pink-300">{formatCurrency(aiTargetTeam.girls_spent)}</span>
+                </div>
+              )}
+              {aiTargetTeam.boys_spent > 0 && (
+                <div className="flex justify-between text-muted-foreground pl-2">
+                  <span className="text-blue-400/70">👨 Boys spent:</span>
+                  <span className="text-blue-300">{formatCurrency(aiTargetTeam.boys_spent)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-muted-foreground border-t border-border/40 pt-1">
                 <span>Slots left:</span>
                 <span className="font-medium text-foreground">
                   {aiTargetTeam.max_players - aiTargetTeam.players_bought}
@@ -1365,14 +1479,14 @@ export default function AuctionPage() {
             </div>
           )}
 
-          {/* Recent purchases */}
-          {purchases.length > 0 && (
+          {/* Recent purchases — captain/manager pre-assignments are intentionally excluded */}
+          {auctionPurchases.length > 0 && (
             <div>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-semibold">
                 Recent Purchases
               </p>
               <div className="space-y-1.5">
-                {[...purchases].slice(-8).reverse().map((p, i) => {
+                {[...auctionPurchases].slice(-8).reverse().map((p, i) => {
                   const team = teams.find(t => t.id === p.team_id);
                   return (
                     <div key={p.id} className="flex items-center justify-between text-xs rounded-lg bg-background/40 px-2.5 py-1.5 border border-border/40">
@@ -1392,12 +1506,6 @@ export default function AuctionPage() {
                             <span className="truncate text-muted-foreground">
                               {p.player_name || `Player #${i + 1}`}
                             </span>
-                            {p.team_role === 'captain' && (
-                              <span className="shrink-0 px-1 py-0.5 rounded bg-[#FFD700]/20 text-[#FFD700] font-bold text-[9px]">C</span>
-                            )}
-                            {p.team_role === 'manager' && (
-                              <span className="shrink-0 px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 font-bold text-[9px]">M</span>
-                            )}
                           </div>
                           {team && (
                             <span className="text-[10px] text-muted-foreground/60 truncate block">

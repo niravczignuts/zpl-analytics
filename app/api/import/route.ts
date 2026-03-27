@@ -18,10 +18,33 @@ export async function POST(req: NextRequest) {
 
     const db = getDB();
 
-    const season = await db.getSeasonById(seasonId);
+    // Season resolution: try exact ID, then by year, then auto-create if year-like
+    let season = await db.getSeasonById(seasonId);
+    if (!season) {
+      // Try to find by year (e.g. "2024" → season with year=2024)
+      const yearNum = parseInt(seasonId, 10);
+      const isYear = /^\d{4}$/.test(seasonId.trim()) && yearNum >= 2000 && yearNum <= 2100;
+      if (isYear) {
+        const allSeasons = await db.getSeasons();
+        season = allSeasons.find(s => s.year === yearNum) || null;
+        if (!season) {
+          // Auto-create the season so stats can be imported
+          season = await db.createSeason({
+            id: `season-${yearNum}`,
+            name: `ZPL ${yearNum}`,
+            year: yearNum,
+            status: 'completed',
+          });
+          console.log(`[Import] Auto-created season: ${season.id}`);
+        }
+      }
+    }
     if (!season) {
       return NextResponse.json({ error: `Season not found: ${seasonId}` }, { status: 404 });
     }
+
+    // Use the resolved season ID (may differ from the submitted seasonId, e.g. "2024" → "season-2024")
+    const resolvedSeasonId = season.id;
 
     // Read file into memory — no temp files, avoids Windows short-path issues
     const bytes = await file.arrayBuffer();
@@ -188,13 +211,37 @@ export async function POST(req: NextRequest) {
         name: string,
         extra?: { batting_hand?: string; bowling_style?: string }
       ): Promise<string | null> => {
-        // 1. Try by external_id first (most reliable)
+        // Normalize name: trim whitespace
+        const nameTrim = name ? name.trim().replace(/\s+/g, ' ') : '';
+
+        // 1. Try by external_id first (most reliable) — check in-memory array
         if (extId) {
           const byExt = allPlayers.find((p: any) => p.external_id === extId);
           if (byExt) return byExt.id;
+          // Also do a direct DB query in case in-memory is stale
+          const dbRows = await db.rawQuery('SELECT id, first_name, last_name, external_id FROM players WHERE external_id = ?', [extId]);
+          if (dbRows.length > 0) {
+            const p = dbRows[0];
+            // Sync into in-memory cache
+            if (!allPlayers.find((x: any) => x.id === p.id)) {
+              allPlayers.push(p);
+              candidates.push({ id: p.id, name: `${p.first_name} ${p.last_name}`.trim(), external_id: p.external_id });
+            }
+            return p.id;
+          }
         }
-        // 2. Try fuzzy name match
-        const match = findBestMatch(name, candidates, 0.78);
+
+        // 2. Try fuzzy name match — also try first-name-only if single token
+        let match = findBestMatch(nameTrim, candidates, 0.78);
+        if (!match && nameTrim && !nameTrim.includes(' ')) {
+          // Single-word name: try matching against first_name only
+          const firstNameCandidates = allPlayers.map((p: any) => ({
+            id: p.id,
+            name: p.first_name ? p.first_name.trim() : '',
+          })).filter((c: any) => c.name);
+          match = findBestMatch(nameTrim, firstNameCandidates, 0.85);
+        }
+
         if (match) {
           const updates: any = {};
           if (extId) updates.external_id = extId;
@@ -203,14 +250,14 @@ export async function POST(req: NextRequest) {
           if (extra?.bowling_style && extra.bowling_style !== '-') updates.bowling_style = extra.bowling_style;
           if (Object.keys(updates).length) await db.updatePlayer(match.id, updates);
           if (extId) {
-            const found = allPlayers.find((p: any) => p.id === match.id);
+            const found = allPlayers.find((p: any) => p.id === match!.id);
             if (found) found.external_id = extId;
           }
           return match.id;
         }
+
         // 3. Not found — auto-create as historical player so past stats are preserved
-        if (!name || !name.trim()) return null;
-        const nameTrim = name.trim();
+        if (!nameTrim) return null;
         const parts = nameTrim.split(/\s+/);
         const newId = uuidv4();
         await db.createPlayer({
@@ -230,37 +277,37 @@ export async function POST(req: NextRequest) {
       if (fileType === 'batting') {
         const rows = parseBattingCsv(csvText);
         if (rows.length === 0) return NextResponse.json({ error: 'No batting rows found. Check CSV format.' }, { status: 422 });
-        await db.clearPlayerStats(seasonId, 'batting');
+        await db.clearPlayerStats(resolvedSeasonId, 'batting');
         for (const r of rows) {
           const pid = await findPlayer(r.external_id, r.name, { batting_hand: r.stats.batting_hand });
-          if (pid) { await db.upsertPlayerStats(pid, seasonId, 'batting', r.stats); result.imported++; result.matched++; }
+          if (pid) { await db.upsertPlayerStats(pid, resolvedSeasonId, 'batting', r.stats); result.imported++; result.matched++; }
           else { result.skipped++; result.skipped_names.push(r.name); }
         }
       } else if (fileType === 'bowling') {
         const rows = parseBowlingCsv(csvText);
         if (rows.length === 0) return NextResponse.json({ error: 'No bowling rows found. Check CSV format.' }, { status: 422 });
-        await db.clearPlayerStats(seasonId, 'bowling');
+        await db.clearPlayerStats(resolvedSeasonId, 'bowling');
         for (const r of rows) {
           const pid = await findPlayer(r.external_id, r.name, { bowling_style: r.stats.bowling_style });
-          if (pid) { await db.upsertPlayerStats(pid, seasonId, 'bowling', r.stats); result.imported++; result.matched++; }
+          if (pid) { await db.upsertPlayerStats(pid, resolvedSeasonId, 'bowling', r.stats); result.imported++; result.matched++; }
           else { result.skipped++; result.skipped_names.push(r.name); }
         }
       } else if (fileType === 'fielding') {
         const rows = parseFieldingCsv(csvText);
         if (rows.length === 0) return NextResponse.json({ error: 'No fielding rows found. Check CSV format.' }, { status: 422 });
-        await db.clearPlayerStats(seasonId, 'fielding');
+        await db.clearPlayerStats(resolvedSeasonId, 'fielding');
         for (const r of rows) {
           const pid = await findPlayer(r.external_id, r.name);
-          if (pid) { await db.upsertPlayerStats(pid, seasonId, 'fielding', r.stats); result.imported++; result.matched++; }
+          if (pid) { await db.upsertPlayerStats(pid, resolvedSeasonId, 'fielding', r.stats); result.imported++; result.matched++; }
           else { result.skipped++; result.skipped_names.push(r.name); }
         }
       } else if (fileType === 'mvp') {
         const rows = parseMvpCsv(csvText);
         if (rows.length === 0) return NextResponse.json({ error: 'No MVP rows found. Expected columns: Player Name, Total.' }, { status: 422 });
-        await db.clearPlayerStats(seasonId, 'mvp');
+        await db.clearPlayerStats(resolvedSeasonId, 'mvp');
         for (const r of rows) {
           const pid = await findPlayer('', r.name, { batting_hand: r.stats.batting_hand, bowling_style: r.stats.bowling_style });
-          if (pid) { await db.upsertPlayerStats(pid, seasonId, 'mvp', r.stats); result.imported++; result.matched++; }
+          if (pid) { await db.upsertPlayerStats(pid, resolvedSeasonId, 'mvp', r.stats); result.imported++; result.matched++; }
           else { result.skipped++; result.skipped_names.push(r.name); }
         }
       } else {

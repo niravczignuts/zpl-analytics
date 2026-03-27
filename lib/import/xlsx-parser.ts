@@ -56,11 +56,20 @@ function pickFuzzy(row: any, ...partials: string[]): string {
 function parseGroupNumber(raw: string | number | null | undefined): number | null {
   if (!raw) return null;
   const s = String(raw).trim();
-  // Accept "1", "Group 1", "G1", "Star", etc.
-  const match = s.match(/\d/);
-  if (match) return Number(match[0]);
+  // Accept letter groups: "A", "Group A", "B", "Group B", "C", "D"
+  const letterMatch = s.match(/\bGroup\s*([A-D])\b|\b([A-D])\b/i);
+  if (letterMatch) {
+    const letter = (letterMatch[1] || letterMatch[2]).toUpperCase();
+    return ({ A: 1, B: 2, C: 3, D: 4 } as Record<string, number>)[letter] ?? null;
+  }
+  // Accept numeric: "1", "Group 1", "G1"
+  const numMatch = s.match(/\b([1-4])\b/);
+  if (numMatch) return Number(numMatch[1]);
+  // Keyword fallbacks
   if (/star/i.test(s)) return 1;
-  if (/girl|female|f\b|jr|junior/i.test(s)) return 4;
+  if (/good/i.test(s)) return 2;
+  if (/average/i.test(s)) return 3;
+  if (/poor|girl|female|f\b|jr|junior/i.test(s)) return 4;
   return null;
 }
 
@@ -136,7 +145,18 @@ export function parseRegistrationXlsx(input: string | Buffer): RegistrationPlaye
     const noteRaw = pick(row, 'Note', 'note', 'Notes', 'notes', 'NOTE', 'Comment', 'comment')
       || pickFuzzy(row, 'note', 'comment');
 
+    // Skip section-header rows (e.g. "⭐⭐⭐ AVERAGE PERFORMERS", "NEW PLAYERS ...")
+    if (/[⭐★*#-]{2,}|AVERAGE PERFORMERS|NEW PLAYERS|SECTION|---/i.test(fullName)) continue;
+    if (/^[^a-z]/i.test(fullName) && fullName.length > 30) continue;
+
     const ratingNum = ratingRaw ? Number(ratingRaw) : null;
+
+    // Map Buy? column: Fixed/Must Buy/Recommended/Consider = true, Skip = false, else null
+    let shouldBuy: boolean | null = null;
+    if (buyRaw) {
+      if (/fixed|must|recommend|consider|yes|true|1\b/i.test(buyRaw)) shouldBuy = true;
+      else if (/skip|no|false|0\b/i.test(buyRaw)) shouldBuy = false;
+    }
 
     players.push({
       first_name: fn,
@@ -145,11 +165,11 @@ export function parseRegistrationXlsx(input: string | Buffer): RegistrationPlaye
       gender: gender || 'Male',
       group_number: parseGroupNumber(groupRaw),
       base_price: parseBasePriceValue(basePriceRaw),
-      is_captain_eligible: /yes|true|1/i.test(captainRaw),
-      role: roleRaw || null,
+      is_captain_eligible: /yes|true|1|captain/i.test(captainRaw) || /captain/i.test(roleRaw),
+      role: roleRaw && roleRaw !== '—' ? roleRaw : null,
       overall_rating: ratingRaw && !isNaN(ratingNum!) ? ratingNum : null,
       grade: gradeRaw || null,
-      should_buy: buyRaw ? /yes|true|1|y/i.test(buyRaw) : null,
+      should_buy: shouldBuy,
       note: noteRaw || null,
     });
   }

@@ -31,7 +31,11 @@ const DATA_DIR = path.join(process.cwd(), 'data', 'seed');
 
 // ─── File paths ────────────────────────────────────────────────────────────────
 const FILES = {
-  reg2026: path.join(DATA_DIR, 'ZPL 2026 Registration Verification.xlsx'),
+  // Use the full analysis XLSX if available (has base price, group, rating, notes);
+  // fall back to the basic registration XLSX
+  reg2026: fs.existsSync(path.join(DATA_DIR, 'ZPL_2026_Analysis.xlsx'))
+    ? path.join(DATA_DIR, 'ZPL_2026_Analysis.xlsx')
+    : path.join(DATA_DIR, 'ZPL 2026 Registration Verification.xlsx'),
   auction2025: path.join(DATA_DIR, "ZPL '25 - Analysis.xlsx"),
   // 2025 stats (season ID 936991 on CricHeroes)
   batting2025: path.join(DATA_DIR, '936991_batting_leaderboard.csv'),
@@ -71,7 +75,9 @@ function seedSeasons() {
 
   db.createSeason({ id: 'season-2024', name: 'ZPL 2024', year: 2024, status: 'completed', rules_json: zplRules });
   db.createSeason({ id: 'season-2025', name: 'ZPL 2025', year: 2025, status: 'completed', rules_json: zplRules });
-  db.createSeason({ id: 'season-2026', name: 'ZPL 2026', year: 2026, status: 'registration', rules_json: zplRules });
+  // 2026: 3 CR budget, 13 players per team, girls auction first (no separate limit)
+  db.createSeason({ id: 'season-2026', name: 'ZPL 2026', year: 2026, status: 'registration', rules_json: zplRules,
+    auction_budget: 30000000, boys_budget: 0, girls_budget: 0, max_players_per_team: 13 } as any);
 
   console.log('  ✅ Seasons created: 2024, 2025, 2026');
 }
@@ -183,14 +189,33 @@ function seedPlayers(): Map<string, string> {
       if (!rp.full_name.trim()) continue;
       const norm = normalizeName(rp.full_name);
 
+      // Captains and pre-assigned (Fixed) players are not available for auction
+      const isCaptainOrFixed = /captain/i.test(rp.role || '');
+      const regData = {
+        season_id: 'season-2026' as const,
+        registration_status: (isCaptainOrFixed ? 'not_for_sale' : 'verified') as 'not_for_sale' | 'verified',
+        ...(rp.group_number != null ? { group_number: rp.group_number } : {}),
+        ...(rp.base_price != null ? { base_price: rp.base_price } : {}),
+        ...(rp.is_captain_eligible != null ? { is_captain_eligible: rp.is_captain_eligible } : {}),
+      };
+
+      const saveOwnerData = (playerId: string) => {
+        if (rp.overall_rating != null || rp.grade || rp.should_buy != null || rp.note) {
+          db.upsertPlayerOwnerData({
+            player_id: playerId,
+            ...(rp.overall_rating != null ? { overall_rating: rp.overall_rating } : {}),
+            ...(rp.grade ? { grade: rp.grade } : {}),
+            ...(rp.should_buy != null ? { should_buy: rp.should_buy } : {}),
+            ...(rp.note ? { owner_note: rp.note } : {}),
+          });
+        }
+      };
+
       // Check exact match first
       if (nameToId.has(norm)) {
-        // Register existing player for 2026
-        db.upsertRegistration({
-          season_id: 'season-2026',
-          player_id: nameToId.get(norm)!,
-          registration_status: 'verified',
-        });
+        const pid = nameToId.get(norm)!;
+        db.upsertRegistration({ ...regData, player_id: pid });
+        saveOwnerData(pid);
         matched++;
         continue;
       }
@@ -200,13 +225,9 @@ function seedPlayers(): Map<string, string> {
       if (match) {
         const existingPlayer = db.getPlayerById(match.id);
         if (existingPlayer) {
-          // Update gender if known
-          db.updatePlayer(match.id, { gender: rp.gender });
-          db.upsertRegistration({
-            season_id: 'season-2026',
-            player_id: match.id,
-            registration_status: 'verified',
-          });
+          if (rp.gender) db.updatePlayer(match.id, { gender: rp.gender });
+          db.upsertRegistration({ ...regData, player_id: match.id });
+          saveOwnerData(match.id);
           matched++;
         }
       } else {
@@ -217,11 +238,8 @@ function seedPlayers(): Map<string, string> {
         const id = uuidv4();
         db.createPlayer({ id, first_name, last_name, gender: rp.gender });
         nameToId.set(norm, id);
-        db.upsertRegistration({
-          season_id: 'season-2026',
-          player_id: id,
-          registration_status: 'verified',
-        });
+        db.upsertRegistration({ ...regData, player_id: id });
+        saveOwnerData(id);
         candidates.push({ id, name: rp.full_name });
         created++;
       }
@@ -447,6 +465,38 @@ function registerCsvPlayersForSeasons(nameToId: Map<string, string>) {
   console.log('  ✅ Season registrations updated');
 }
 
+// ─── Step 6: Set fixed captain valuations for 2026 ────────────────────────────
+// Each captain has a predetermined value deducted from their team's 3 CR budget
+const CAPTAIN_PRICES_2026: Record<string, number> = {
+  'sagar bhayani':    7500000,  // 75 L
+  'rahul joshi':      7500000,  // 75 L
+  'nirav chaudhari':  5000000,  // 50 L
+  'nihar bhatt':      5000000,  // 50 L
+  'harsh chauhan':    5000000,  // 50 L
+  'parth trivedi':    5000000,  // 50 L
+  'gunjan kalariya':  2500000,  // 25 L
+  'divyesh patel':     500000,  //  5 L
+};
+
+function seedCaptainPrices2026(nameToId: Map<string, string>) {
+  console.log('\n👑 Setting fixed captain valuations for 2026...');
+  const rawDb = (db as any).db;
+  let count = 0;
+  for (const [name, price] of Object.entries(CAPTAIN_PRICES_2026)) {
+    const playerId = nameToId.get(name);
+    if (!playerId) {
+      console.warn(`  ⚠️  Captain not found: ${name}`);
+      continue;
+    }
+    rawDb.prepare(
+      'UPDATE season_registrations SET base_price = ? WHERE player_id = ? AND season_id = ?'
+    ).run(price, playerId, 'season-2026');
+    console.log(`  ✅ ${name}: ${(price / 100000).toFixed(0)} L`);
+    count++;
+  }
+  console.log(`  ✅ ${count} captain valuations set`);
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('🏏 ZPL Analytics — Database Seed Script');
@@ -464,11 +514,26 @@ async function main() {
   }
 
   try {
+    // Wipe all existing data so re-runs are idempotent
+    console.log('\n🗑️  Clearing existing data...');
+    const rawDb = (db as any).db;
+    rawDb.exec(`
+      DELETE FROM player_season_stats;
+      DELETE FROM auction_purchases;
+      DELETE FROM season_registrations;
+      DELETE FROM teams;
+      DELETE FROM players;
+      DELETE FROM seasons;
+      DELETE FROM player_owner_data;
+    `);
+    console.log('  ✅ Tables cleared');
+
     seedSeasons();
     const nameToId = seedPlayers();
     registerCsvPlayersForSeasons(nameToId);
     seedStats(nameToId);
     seedTeams2025(nameToId);
+    seedCaptainPrices2026(nameToId);
 
     console.log('\n' + '═'.repeat(50));
     console.log('✅ Seed complete! Database ready at data/zpl.db');

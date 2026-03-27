@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS seasons (
   year INTEGER NOT NULL,
   status TEXT DEFAULT 'upcoming',
   auction_budget REAL DEFAULT 25000000,
+  boys_budget REAL DEFAULT 23000000,
+  girls_budget REAL DEFAULT 2000000,
   max_players_per_team INTEGER DEFAULT 12,
   max_overs INTEGER DEFAULT 12,
   max_bowler_overs INTEGER DEFAULT 3,
