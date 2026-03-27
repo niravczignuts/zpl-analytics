@@ -23,7 +23,7 @@ const TEAM_ROLES: { team: string; captain: string; manager: string }[] = [
   { team: 'Trojan Horse',    captain: 'Nihar Bhatt',     manager: 'Hemali Virda' },
   { team: 'Super Smashers',  captain: 'Nirav Chaudhari', manager: 'Rishita Katoch' },
   { team: 'Star Strikers',   captain: 'Rahul Joshi',     manager: 'Dhara Gohil' },
-  { team: 'Grey Mighty',     captain: 'Divyesh Patel',   manager: 'Priyanka Prajapati' },
+  { team: 'Gray Mighty',     captain: 'Divyesh Patel',   manager: 'Priyanka Prajapati' },
   { team: 'Tech Titans',     captain: 'Harsh Chauhan',   manager: 'Janki Radiya' },
   { team: 'Red Squad',       captain: 'Gunjan Kalariya', manager: 'Swati Bais' },
 ];
@@ -73,6 +73,14 @@ export async function POST() {
       .eq('id', SEASON_ID);
     if (e1) return NextResponse.json({ success: false, error: `Season update: ${e1.message}`, log }, { status: 500 });
     log.push('✅ Season 2026: 3 CR budget, 13-player squads');
+
+    // ── 1b. Rename "Grey Mighty" → "Gray Mighty" in teams table ─────────────
+    const { error: e1b } = await sb.from('teams')
+      .update({ name: 'Gray Mighty' })
+      .eq('season_id', SEASON_ID)
+      .eq('name', 'Grey Mighty');
+    if (e1b) log.push(`⚠️  Team rename: ${e1b.message}`);
+    else log.push('✅ Team renamed: Grey Mighty → Gray Mighty');
 
     // Build captain price lookup by normalised name
     const captainPriceMap: Record<string, number> = {};
