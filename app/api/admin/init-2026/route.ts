@@ -43,7 +43,7 @@ export async function POST() {
     // ── 1. Update season-2026: 3 CR budget, 13 players per team ─────────────
     const { error: seasonErr } = await supabase
       .from('seasons')
-      .update({ auction_budget: 30000000, boys_budget: 0, girls_budget: 0, max_players_per_team: 13 })
+      .update({ auction_budget: 30000000, max_players_per_team: 13 })
       .eq('id', SEASON_ID);
     if (seasonErr) throw new Error(`Season update failed: ${seasonErr.message}`);
     log.push('✅ Season 2026: budget = 3 CR, squad size = 13');
