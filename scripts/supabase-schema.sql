@@ -212,6 +212,19 @@ CREATE TABLE IF NOT EXISTS player_remarks (
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── Player Owner Data ─────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS player_owner_data (
+  player_id      TEXT PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+  batting_stars  DOUBLE PRECISION,
+  bowling_stars  DOUBLE PRECISION,
+  fielding_stars DOUBLE PRECISION,
+  owner_note     TEXT DEFAULT '',
+  grade          TEXT,
+  should_buy     BOOLEAN,
+  overall_rating DOUBLE PRECISION,
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── Points Table ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS points_table (
   id             TEXT PRIMARY KEY,
@@ -244,6 +257,7 @@ ALTER TABLE match_fielding       DISABLE ROW LEVEL SECURITY;
 ALTER TABLE match_scorecards     DISABLE ROW LEVEL SECURITY;
 ALTER TABLE practice_matches     DISABLE ROW LEVEL SECURITY;
 ALTER TABLE player_remarks       DISABLE ROW LEVEL SECURITY;
+ALTER TABLE player_owner_data    DISABLE ROW LEVEL SECURITY;
 ALTER TABLE points_table         DISABLE ROW LEVEL SECURITY;
 
 -- ── Indexes for performance ───────────────────────────────────────────────────

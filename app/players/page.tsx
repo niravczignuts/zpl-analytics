@@ -412,7 +412,7 @@ export default function PlayersPage() {
                         <div className="space-y-2">
                           {Object.entries(detail.stats).map(([sid, s]) => (
                             <div key={sid} className="bg-background/60 rounded-lg border border-border/50 px-3 py-2">
-                              <p className="text-[10px] text-[#FFD700]/80 font-semibold mb-2 uppercase tracking-wide">Season {sid.slice(0, 4)}</p>
+                              <p className="text-[10px] text-[#FFD700]/80 font-semibold mb-2 uppercase tracking-wide">{sid.startsWith('season-') ? `ZPL ${sid.slice(7)}` : sid}</p>
                               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                                 {s.batting && (
                                   <>
