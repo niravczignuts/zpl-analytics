@@ -549,13 +549,26 @@ export default function TeamDetailPage() {
                     {getRoleIcon(p.player_role)} {p.player_role || '—'}
                   </span>
                 </div>
-                {ratingsMap[p.id] && (ratingsMap[p.id].batting_stars != null || ratingsMap[p.id].bowling_stars != null || ratingsMap[p.id].fielding_stars != null) && (
-                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                    {ratingsMap[p.id].batting_stars != null && <span className="text-[9px] text-[#FFD700]/70">🏏{'★'.repeat(ratingsMap[p.id].batting_stars)}{'☆'.repeat(5-ratingsMap[p.id].batting_stars)}</span>}
-                    {ratingsMap[p.id].bowling_stars != null && <span className="text-[9px] text-[#FFD700]/70">🎳{'★'.repeat(ratingsMap[p.id].bowling_stars)}{'☆'.repeat(5-ratingsMap[p.id].bowling_stars)}</span>}
-                    {ratingsMap[p.id].fielding_stars != null && <span className="text-[9px] text-[#FFD700]/70">🤸{'★'.repeat(ratingsMap[p.id].fielding_stars)}{'☆'.repeat(5-ratingsMap[p.id].fielding_stars)}</span>}
-                  </div>
-                )}
+                {ratingsMap[p.id] && (() => {
+                  const r = ratingsMap[p.id];
+                  const hasStars = r.batting_stars != null || r.bowling_stars != null || r.fielding_stars != null;
+                  const hasScout = r.overall_rating != null || r.grade || r.should_buy != null;
+                  if (!hasStars && !hasScout) return null;
+                  return (
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      {r.batting_stars != null && <span className="text-[9px] text-[#FFD700]/70">🏏{'★'.repeat(r.batting_stars)}{'☆'.repeat(5-r.batting_stars)}</span>}
+                      {r.bowling_stars != null && <span className="text-[9px] text-[#FFD700]/70">🎳{'★'.repeat(r.bowling_stars)}{'☆'.repeat(5-r.bowling_stars)}</span>}
+                      {r.fielding_stars != null && <span className="text-[9px] text-[#FFD700]/70">🤸{'★'.repeat(r.fielding_stars)}{'☆'.repeat(5-r.fielding_stars)}</span>}
+                      {(hasStars || hasScout) && (r.grade || r.overall_rating != null || r.should_buy != null) && (
+                        <span className="text-border/40 text-[9px]">·</span>
+                      )}
+                      {r.overall_rating != null && <span className="text-[9px] text-[#FFD700]/80 font-semibold">{r.overall_rating}★</span>}
+                      {r.grade && <span className="text-[9px] bg-[#1B3A8C]/20 text-blue-300 px-1 rounded font-bold">{r.grade}</span>}
+                      {r.should_buy === true && <span className="text-[9px] text-green-400 font-semibold">✓Buy</span>}
+                      {r.should_buy === false && <span className="text-[9px] text-red-400/70">✗Skip</span>}
+                    </div>
+                  );
+                })()}
               </div>
               <div className="text-right shrink-0 space-y-0.5">
                 {p.purchase_price > 0 && <p className="text-xs font-bold text-[#FFD700]">{formatCurrency(p.purchase_price)}</p>}

@@ -295,43 +295,53 @@ export class SupabaseDB {
     const budget = season?.auction_budget || 25000000;
 
     // Fetch auction purchases for this team+season with player data
+    // Use * to avoid errors if optional columns (team_role, purchase_order) don't exist yet
     const { data: apRows, error: apError } = await this.supabase
       .from('auction_purchases')
-      .select(`
-        purchase_price, group_number, is_captain, team_role, purchase_order,
-        player:players!player_id(*)
-      `)
+      .select(`*, player:players!player_id(*)`)
       .eq('team_id', teamId)
       .eq('season_id', sid)
-      .order('purchase_order');
-    if (apError) throw new Error(apError.message);
+      .order('purchase_order', { nullsFirst: false });
+    if (apError) {
+      console.error('[getTeamWithSquad] auction_purchases error:', apError.message);
+      throw new Error(apError.message);
+    }
 
-    // For each player fetch their latest stats
-    const playersWithStats = await Promise.all((apRows ?? []).map(async (ap: any) => {
+    // Batch-fetch all stats for all players in ONE query (avoids N+1)
+    const playerIds = (apRows ?? []).map((ap: any) => ap.player?.id).filter(Boolean);
+    const { data: allStatRows } = playerIds.length
+      ? await this.supabase
+          .from('player_season_stats')
+          .select('player_id, stat_type, stats_json, season_id')
+          .in('player_id', playerIds)
+          .order('season_id', { ascending: false })
+      : { data: [] };
+
+    // Group stats by player_id, keeping only the most recent row per stat_type
+    const statsByPlayer: Record<string, Record<string, any>> = {};
+    for (const row of (allStatRows ?? [])) {
+      if (!statsByPlayer[row.player_id]) statsByPlayer[row.player_id] = {};
+      // Only keep the first (most recent) entry per stat_type since ordered DESC
+      if (!statsByPlayer[row.player_id][row.stat_type]) {
+        statsByPlayer[row.player_id][row.stat_type] = row;
+      }
+    }
+
+    const playersWithStats = (apRows ?? []).map((ap: any) => {
       const p = ap.player;
-      const { data: statRows } = await this.supabase
-        .from('player_season_stats')
-        .select('stat_type, stats_json, season_id')
-        .eq('player_id', p.id)
-        .order('season_id', { ascending: false });
-
-      const batting = (statRows ?? []).find((r: any) => r.stat_type === 'batting');
-      const bowling = (statRows ?? []).find((r: any) => r.stat_type === 'bowling');
-      const fielding = (statRows ?? []).find((r: any) => r.stat_type === 'fielding');
-      const mvp = (statRows ?? []).find((r: any) => r.stat_type === 'mvp');
-
+      const stats = statsByPlayer[p?.id] ?? {};
       return {
         ...p,
         purchase_price: ap.purchase_price,
         group_number: ap.group_number,
         is_captain: ap.is_captain,
         team_role: ap.team_role,
-        batting: batting ? JSON.parse(batting.stats_json) : null,
-        bowling: bowling ? JSON.parse(bowling.stats_json) : null,
-        fielding: fielding ? JSON.parse(fielding.stats_json) : null,
-        mvp: mvp ? JSON.parse(mvp.stats_json) : null,
+        batting: stats.batting ? JSON.parse(stats.batting.stats_json) : null,
+        bowling: stats.bowling ? JSON.parse(stats.bowling.stats_json) : null,
+        fielding: stats.fielding ? JSON.parse(stats.fielding.stats_json) : null,
+        mvp: stats.mvp ? JSON.parse(stats.mvp.stats_json) : null,
       };
-    }));
+    });
 
     const budget_used = playersWithStats.reduce((s: number, p: any) => s + (p.purchase_price || 0), 0);
     return {
@@ -515,31 +525,42 @@ export class SupabaseDB {
     const { data, error } = await q;
     if (error) throw new Error(error.message);
 
-    return await Promise.all((data ?? []).map(async (p: any) => {
+    const players = data ?? [];
+
+    // Batch-fetch all stats in ONE query (avoids N+1 per player)
+    const pIds = players.map((p: any) => p.id).filter(Boolean);
+    const { data: allStatRows } = pIds.length
+      ? await this.supabase
+          .from('player_season_stats')
+          .select('player_id, stat_type, stats_json, season_id')
+          .in('player_id', pIds)
+          .order('season_id', { ascending: false })
+      : { data: [] };
+
+    // Group by player_id, keeping only the most recent row per stat_type
+    const statsByPlayer: Record<string, Record<string, any>> = {};
+    for (const row of (allStatRows ?? [])) {
+      if (!statsByPlayer[row.player_id]) statsByPlayer[row.player_id] = {};
+      if (!statsByPlayer[row.player_id][row.stat_type]) {
+        statsByPlayer[row.player_id][row.stat_type] = row;
+      }
+    }
+
+    return players.map((p: any) => {
       const { season_registrations, ...playerFields } = p;
       const reg = Array.isArray(season_registrations) ? season_registrations[0] : season_registrations;
-
-      const { data: statRows } = await this.supabase
-        .from('player_season_stats')
-        .select('stat_type, stats_json, season_id')
-        .eq('player_id', p.id)
-        .order('season_id', { ascending: false });
-
-      const batting = (statRows ?? []).find((r: any) => r.stat_type === 'batting');
-      const bowling = (statRows ?? []).find((r: any) => r.stat_type === 'bowling');
-      const mvp = (statRows ?? []).find((r: any) => r.stat_type === 'mvp');
-
+      const stats = statsByPlayer[p.id] ?? {};
       return {
         ...playerFields,
         group_number: reg?.group_number ?? null,
         base_price: reg?.base_price ?? null,
         is_captain_eligible: reg?.is_captain_eligible ?? null,
         registration_status: reg?.registration_status ?? null,
-        batting: batting ? JSON.parse(batting.stats_json) : null,
-        bowling: bowling ? JSON.parse(bowling.stats_json) : null,
-        mvp: mvp ? JSON.parse(mvp.stats_json) : null,
+        batting: stats.batting ? JSON.parse(stats.batting.stats_json) : null,
+        bowling: stats.bowling ? JSON.parse(stats.bowling.stats_json) : null,
+        mvp: stats.mvp ? JSON.parse(stats.mvp.stats_json) : null,
       } as PlayerWithStats;
-    }));
+    });
   }
 
   // ─── Stats ───────────────────────────────────────────────────────────────────
@@ -1097,9 +1118,44 @@ export class SupabaseDB {
   // ─── Util ─────────────────────────────────────────────────────────────────
 
   async rawQuery(sql: string, params: any[] = []): Promise<any[]> {
-    // Not supported with JS client — return empty array
-    console.warn('rawQuery not supported in Supabase JS adapter');
-    return [];
+    // Parse simple SELECT queries and route to Supabase JS client
+    // Handles: SELECT <cols> FROM <table> [WHERE <col> = ? AND ...]
+    try {
+      const sqlNorm = sql.replace(/\s+/g, ' ').trim();
+      const fromMatch = sqlNorm.match(/FROM\s+(\w+)/i);
+      const selectMatch = sqlNorm.match(/SELECT\s+([\w\s,*]+?)\s+FROM/i);
+      if (!fromMatch || !selectMatch) {
+        console.warn('rawQuery: unsupported SQL pattern, returning []', sql);
+        return [];
+      }
+      const table = fromMatch[1];
+      const cols = selectMatch[1].trim();
+
+      let q = this.supabase.from(table).select(cols === '*' ? '*' : cols);
+
+      // Parse WHERE clauses: col = ? AND col = ?
+      const whereMatch = sqlNorm.match(/WHERE\s+(.+)$/i);
+      if (whereMatch) {
+        const conditions = whereMatch[1].split(/\s+AND\s+/i);
+        let paramIdx = 0;
+        for (const cond of conditions) {
+          const eqMatch = cond.trim().match(/^(\w+)\s*=\s*\?$/);
+          if (eqMatch && paramIdx < params.length) {
+            q = (q as any).eq(eqMatch[1], params[paramIdx++]);
+          }
+        }
+      }
+
+      const { data, error } = await (q as any);
+      if (error) {
+        console.warn('rawQuery error:', error.message, '| SQL:', sql);
+        return [];
+      }
+      return data ?? [];
+    } catch (e: any) {
+      console.warn('rawQuery exception:', e.message, '| SQL:', sql);
+      return [];
+    }
   }
 
   async rawRun(sql: string, params: any[] = []): Promise<void> {
@@ -1128,6 +1184,17 @@ export class SupabaseDB {
 
   // ─── Player Owner Data ───────────────────────────────────────────────────────
 
+  async getLatestPlayerRegistration(playerId: string): Promise<{ base_price: number | null } | null> {
+    const { data } = await this.supabase
+      .from('season_registrations')
+      .select('base_price')
+      .eq('player_id', playerId)
+      .order('season_id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  }
+
   async getPlayerOwnerData(playerId: string): Promise<PlayerOwnerData | null> {
     const { data, error } = await this.supabase
       .from('player_owner_data')
@@ -1135,25 +1202,47 @@ export class SupabaseDB {
       .eq('player_id', playerId)
       .maybeSingle();
     if (error) {
-      // Table may not exist yet — return null gracefully
       console.warn('getPlayerOwnerData error:', error.message);
       return null;
     }
     return data as PlayerOwnerData | null;
   }
 
+  async getPlayerOwnerDataBulk(playerIds: string[]): Promise<Record<string, PlayerOwnerData>> {
+    if (!playerIds.length) return {};
+    try {
+      const { data, error } = await this.supabase
+        .from('player_owner_data')
+        .select('*')
+        .in('player_id', playerIds);
+      if (error) {
+        console.warn('getPlayerOwnerDataBulk error:', error.message);
+        return {};
+      }
+      const result: Record<string, PlayerOwnerData> = {};
+      for (const row of (data ?? [])) result[row.player_id] = row as PlayerOwnerData;
+      return result;
+    } catch (e: any) {
+      console.warn('getPlayerOwnerDataBulk exception:', e.message);
+      return {};
+    }
+  }
+
   async upsertPlayerOwnerData(input: Partial<PlayerOwnerData> & { player_id: string }): Promise<PlayerOwnerData> {
-    const row = {
+    const row: Record<string, any> = {
       player_id: input.player_id,
-      batting_stars: input.batting_stars ?? null,
-      bowling_stars: input.bowling_stars ?? null,
-      fielding_stars: input.fielding_stars ?? null,
-      owner_note: input.owner_note ?? '',
       updated_at: new Date().toISOString(),
     };
+    if (input.batting_stars !== undefined) row.batting_stars = input.batting_stars ?? null;
+    if (input.bowling_stars !== undefined) row.bowling_stars = input.bowling_stars ?? null;
+    if (input.fielding_stars !== undefined) row.fielding_stars = input.fielding_stars ?? null;
+    if (input.owner_note !== undefined) row.owner_note = input.owner_note ?? '';
+    if (input.grade !== undefined) row.grade = input.grade ?? null;
+    if (input.should_buy !== undefined) row.should_buy = input.should_buy ?? null;
+    if (input.overall_rating !== undefined) row.overall_rating = input.overall_rating ?? null;
     const { error } = await this.supabase
       .from('player_owner_data')
-      .upsert(row, { onConflict: 'player_id' });
+      .upsert(row, { onConflict: 'player_id', ignoreDuplicates: false });
     if (error) throw new Error('Failed to save owner data (run Supabase migration): ' + error.message);
     return (await this.getPlayerOwnerData(input.player_id)) ?? row as any;
   }

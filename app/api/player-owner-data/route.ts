@@ -7,13 +7,8 @@ export async function GET(req: NextRequest) {
     const db = getDB();
     const ids = req.nextUrl.searchParams.get('ids')?.split(',').filter(Boolean) ?? [];
     if (!ids.length) return NextResponse.json({});
-    const result: Record<string, any> = {};
-    await Promise.all(
-      ids.map(async id => {
-        const d = await (db as any).getPlayerOwnerData(id);
-        if (d) result[id] = d;
-      })
-    );
+    // Use batch query — single DB round-trip instead of N individual queries
+    const result = await (db as any).getPlayerOwnerDataBulk(ids);
     return NextResponse.json(result);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

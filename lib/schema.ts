@@ -212,6 +212,9 @@ CREATE TABLE IF NOT EXISTS player_owner_data (
   bowling_stars INTEGER,
   fielding_stars INTEGER,
   owner_note TEXT DEFAULT '',
+  grade TEXT,
+  should_buy INTEGER,
+  overall_rating REAL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 `;

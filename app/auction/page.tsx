@@ -165,8 +165,8 @@ export default function AuctionPage() {
   const [bidAdviceError, setBidAdviceError] = useState('');
 
   // Owner ratings + notes state
-  const [ownerData, setOwnerData] = useState<{ batting_stars: number|null; bowling_stars: number|null; fielding_stars: number|null; owner_note: string }>({
-    batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: ''
+  const [ownerData, setOwnerData] = useState<{ batting_stars: number|null; bowling_stars: number|null; fielding_stars: number|null; owner_note: string; grade: string|null; should_buy: boolean|null; overall_rating: number|null }>({
+    batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '', grade: null, should_buy: null, overall_rating: null
   });
   const [ownerDataSaving, setOwnerDataSaving] = useState(false);
   const [ownerDataSaved, setOwnerDataSaved] = useState(false);
@@ -214,7 +214,7 @@ export default function AuctionPage() {
   // Load owner data for selected player
   useEffect(() => {
     if (!selectedPlayer) {
-      setOwnerData({ batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '' });
+      setOwnerData({ batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '', grade: null, should_buy: null, overall_rating: null });
       return;
     }
     fetch(`/api/player-owner-data/${selectedPlayer.id}`)
@@ -226,6 +226,9 @@ export default function AuctionPage() {
             bowling_stars: d.bowling_stars ?? null,
             fielding_stars: d.fielding_stars ?? null,
             owner_note: d.owner_note ?? '',
+            grade: d.grade ?? null,
+            should_buy: d.should_buy ?? null,
+            overall_rating: d.overall_rating ?? null,
           });
         }
       })
@@ -342,20 +345,35 @@ export default function AuctionPage() {
     }
   };
 
-  const handleSaveOwnerData = async () => {
+  const handleSaveOwnerData = async (overrideData?: typeof ownerData) => {
     if (!selectedPlayer) return;
     setOwnerDataSaving(true);
     setOwnerDataSaved(false);
+    const dataToSave = overrideData ?? ownerData;
     try {
       await fetch(`/api/player-owner-data/${selectedPlayer.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ownerData),
+        body: JSON.stringify(dataToSave),
       });
       setOwnerDataSaved(true);
       setTimeout(() => setOwnerDataSaved(false), 1500);
     } catch {}
     finally { setOwnerDataSaving(false); }
+  };
+
+  const handleStarClick = (key: 'batting_stars' | 'bowling_stars' | 'fielding_stars', val: number) => {
+    setOwnerData(prev => {
+      const newVal = prev[key] === val ? null : val;
+      const updated = { ...prev, [key]: newVal };
+      // Compute average of rated stars and persist as overall_rating
+      const stars = [updated.batting_stars, updated.bowling_stars, updated.fielding_stars].filter(v => v != null) as number[];
+      if (stars.length > 0) {
+        updated.overall_rating = Math.round((stars.reduce((a, b) => a + b, 0) / stars.length) * 10) / 10;
+      }
+      handleSaveOwnerData(updated);
+      return updated;
+    });
   };
 
   // ── AI Bid Advice for selected player ──────────────────────────────────────
@@ -760,6 +778,41 @@ export default function AuctionPage() {
                     <p className="text-xs text-muted-foreground/60 italic">New player — no historical data or notes available.</p>
                   )}
 
+                  {/* ── Scouting Data (imported + live avg) ── */}
+                  {(() => {
+                    // Live average from manual stars takes priority over imported overall_rating
+                    const manualStars = [ownerData.batting_stars, ownerData.bowling_stars, ownerData.fielding_stars].filter(v => v != null) as number[];
+                    const liveRating = manualStars.length > 0
+                      ? Math.round((manualStars.reduce((a, b) => a + b, 0) / manualStars.length) * 10) / 10
+                      : ownerData.overall_rating;
+                    const hasScoutingData = liveRating != null || ownerData.grade || ownerData.should_buy != null;
+                    if (!hasScoutingData) return null;
+                    return (
+                    <div className="flex items-center gap-2 px-2 py-1.5 bg-[#1B3A8C]/10 rounded-lg border border-[#1B3A8C]/30 flex-wrap text-[11px]">
+                      <span className="text-muted-foreground/60 text-[10px] uppercase font-semibold tracking-wide shrink-0">Scouting</span>
+                      <span className="text-border/60">|</span>
+                      {liveRating != null && (
+                        <span className="flex items-center gap-1">
+                          <span className="text-muted-foreground/70">Rating:</span>
+                          <span className="font-semibold text-[#FFD700]">{liveRating}</span>
+                          {manualStars.length > 0 && <span className="text-muted-foreground/40 text-[9px]">(avg)</span>}
+                        </span>
+                      )}
+                      {ownerData.grade && (
+                        <span className="flex items-center gap-1">
+                          <span className="text-muted-foreground/70">Grade:</span>
+                          <span className="font-bold text-foreground">{ownerData.grade}</span>
+                        </span>
+                      )}
+                      {ownerData.should_buy != null && (
+                        <span className={`flex items-center gap-1 font-semibold ${ownerData.should_buy ? 'text-green-400' : 'text-red-400'}`}>
+                          {ownerData.should_buy ? '✓ Buy' : '✗ Skip'}
+                        </span>
+                      )}
+                    </div>
+                    );
+                  })()}
+
                   {/* ── Owner Assessment — compact ── */}
                   <div className="flex items-center gap-2 px-2 py-1.5 bg-background/40 rounded-lg border border-border/50 flex-wrap">
                     {/* Stars for each category */}
@@ -773,7 +826,7 @@ export default function AuctionPage() {
                         {[1,2,3,4,5].map(s => (
                           <button
                             key={s}
-                            onClick={() => setOwnerData(prev => ({ ...prev, [key]: prev[key] === s ? null : s }))}
+                            onClick={() => handleStarClick(key, s)}
                             onMouseDown={e => e.preventDefault()}
                             className="text-[13px] leading-none text-[#FFD700] transition-transform active:scale-110 select-none"
                           >

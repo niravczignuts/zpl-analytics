@@ -8,10 +8,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const player = await db.getPlayerById(id);
     if (!player) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    const stats = await db.getPlayerStats(id);
-    const remarks = await db.getPlayerRemarks(id);
+    const [stats, remarks, ownerData, latestReg] = await Promise.all([
+      db.getPlayerStats(id),
+      db.getPlayerRemarks(id),
+      (db as any).getPlayerOwnerData(id).catch(() => null),
+      (db as any).getLatestPlayerRegistration(id).catch(() => null),
+    ]);
 
-    return NextResponse.json({ ...player, stats, remarks });
+    return NextResponse.json({
+      ...player,
+      stats,
+      remarks,
+      base_price: latestReg?.base_price ?? null,
+      owner_data: ownerData ?? null,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

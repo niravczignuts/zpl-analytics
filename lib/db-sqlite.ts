@@ -64,9 +64,17 @@ function getDb(): Database.Database {
       bowling_stars INTEGER,
       fielding_stars INTEGER,
       owner_note TEXT DEFAULT '',
+      grade TEXT,
+      should_buy INTEGER,
+      overall_rating REAL,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
   } catch {}
+  // Migrations for existing player_owner_data rows
+  const podCols = (_db.prepare("PRAGMA table_info(player_owner_data)").all() as any[]).map(c => c.name);
+  if (!podCols.includes('grade')) _db.exec("ALTER TABLE player_owner_data ADD COLUMN grade TEXT");
+  if (!podCols.includes('should_buy')) _db.exec("ALTER TABLE player_owner_data ADD COLUMN should_buy INTEGER");
+  if (!podCols.includes('overall_rating')) _db.exec("ALTER TABLE player_owner_data ADD COLUMN overall_rating REAL");
   return _db;
 }
 
@@ -729,22 +737,41 @@ export class SQLiteDB {
     return { totalPlayers, totalTeams, totalMatches, completedMatches };
   }
 
+  getLatestPlayerRegistration(playerId: string): { base_price: number | null } | null {
+    const row = this.db.prepare(
+      'SELECT base_price FROM season_registrations WHERE player_id = ? ORDER BY season_id DESC LIMIT 1'
+    ).get(playerId) as any;
+    return row || null;
+  }
+
   // ─── Player Owner Data ───────────────────────────────────────────────────────
   getPlayerOwnerData(playerId: string): PlayerOwnerData | null {
     const row = this.db.prepare('SELECT * FROM player_owner_data WHERE player_id = ?').get(playerId) as any;
     return row || null;
   }
 
+  getPlayerOwnerDataBulk(playerIds: string[]): Record<string, PlayerOwnerData> {
+    if (!playerIds.length) return {};
+    const placeholders = playerIds.map(() => '?').join(',');
+    const rows = this.db.prepare(`SELECT * FROM player_owner_data WHERE player_id IN (${placeholders})`).all(...playerIds) as any[];
+    const result: Record<string, PlayerOwnerData> = {};
+    for (const row of rows) result[row.player_id] = row;
+    return result;
+  }
+
   upsertPlayerOwnerData(data: Partial<PlayerOwnerData> & { player_id: string }): PlayerOwnerData {
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO player_owner_data (player_id, batting_stars, bowling_stars, fielding_stars, owner_note, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO player_owner_data (player_id, batting_stars, bowling_stars, fielding_stars, owner_note, grade, should_buy, overall_rating, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(player_id) DO UPDATE SET
-        batting_stars = excluded.batting_stars,
-        bowling_stars = excluded.bowling_stars,
-        fielding_stars = excluded.fielding_stars,
-        owner_note = excluded.owner_note,
+        batting_stars = COALESCE(excluded.batting_stars, batting_stars),
+        bowling_stars = COALESCE(excluded.bowling_stars, bowling_stars),
+        fielding_stars = COALESCE(excluded.fielding_stars, fielding_stars),
+        owner_note = CASE WHEN excluded.owner_note != '' THEN excluded.owner_note ELSE owner_note END,
+        grade = COALESCE(excluded.grade, grade),
+        should_buy = COALESCE(excluded.should_buy, should_buy),
+        overall_rating = COALESCE(excluded.overall_rating, overall_rating),
         updated_at = excluded.updated_at
     `).run(
       data.player_id,
@@ -752,6 +779,9 @@ export class SQLiteDB {
       data.bowling_stars ?? null,
       data.fielding_stars ?? null,
       data.owner_note ?? '',
+      data.grade ?? null,
+      data.should_buy != null ? (data.should_buy ? 1 : 0) : null,
+      data.overall_rating ?? null,
       now
     );
     return this.getPlayerOwnerData(data.player_id)!;

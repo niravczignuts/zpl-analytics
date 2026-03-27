@@ -20,8 +20,13 @@ interface PlayerDetail {
   id: string; first_name: string; last_name: string;
   gender: string; player_role: string; batting_hand: string; bowling_style: string;
   photo_url: string | null;
+  base_price: number | null;
   stats: Record<string, { batting?: any; bowling?: any; fielding?: any; mvp?: any }>;
   remarks: { id: string; remark_type: string; remark: string; created_at: string }[];
+  owner_data: {
+    batting_stars: number | null; bowling_stars: number | null; fielding_stars: number | null;
+    owner_note: string; grade: string | null; should_buy: boolean | null; overall_rating: number | null;
+  } | null;
 }
 
 interface Season { id: string; name: string; year: number; }
@@ -39,7 +44,7 @@ export default function PlayerProfilePage() {
   const [showRemarkForm, setShowRemarkForm] = useState(false);
   const [matchHistory, setMatchHistory] = useState<{ batting: any[]; bowling: any[] }>({ batting: [], bowling: [] });
   const [showMatchHistory, setShowMatchHistory] = useState(false);
-  const [ownerData, setOwnerData] = useState<{ batting_stars: number | null; bowling_stars: number | null; fielding_stars: number | null; owner_note: string }>({ batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '' });
+  const [ownerData, setOwnerData] = useState<{ batting_stars: number | null; bowling_stars: number | null; fielding_stars: number | null; owner_note: string; grade: string | null; should_buy: boolean | null; overall_rating: number | null }>({ batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '', grade: null, should_buy: null, overall_rating: null });
   const [ownerSaving, setOwnerSaving] = useState(false);
   const [ownerSaved, setOwnerSaved] = useState(false);
 
@@ -49,7 +54,22 @@ export default function PlayerProfilePage() {
       fetchJSON<any>('/api/seasons'),
       fetchJSON<any>(`/api/players/${id}/match-history`).catch(() => ({ batting: [], bowling: [] })),
     ]).then(([playerData, seasonsData, historyData]) => {
-      if (playerData) setPlayer(playerData);
+      if (playerData) {
+        setPlayer(playerData);
+        // Populate ownerData from API response (includes grade/should_buy/overall_rating)
+        if (playerData.owner_data) {
+          const od = playerData.owner_data;
+          setOwnerData({
+            batting_stars: od.batting_stars ?? null,
+            bowling_stars: od.bowling_stars ?? null,
+            fielding_stars: od.fielding_stars ?? null,
+            owner_note: od.owner_note || '',
+            grade: od.grade ?? null,
+            should_buy: od.should_buy ?? null,
+            overall_rating: od.overall_rating ?? null,
+          });
+        }
+      }
       // Sort newest first so tabs default to most recent season
       const sorted = (Array.isArray(seasonsData) ? seasonsData : (seasonsData as any)?.seasons ?? [])
         .sort((a: Season, b: Season) => b.year - a.year);
@@ -57,11 +77,6 @@ export default function PlayerProfilePage() {
       setMatchHistory({ batting: (historyData as any)?.batting || [], bowling: (historyData as any)?.bowling || [] });
       setLoading(false);
     }).catch(() => setLoading(false));
-    // Fetch owner ratings
-    fetch(`/api/player-owner-data/${id}`)
-      .then(r => r.json())
-      .then(d => { if (d && !d.error) setOwnerData({ batting_stars: d.batting_stars ?? null, bowling_stars: d.bowling_stars ?? null, fielding_stars: d.fielding_stars ?? null, owner_note: d.owner_note || '' }); })
-      .catch(() => {});
   }, [id]);
 
   const handleSaveOwnerData = async (updated?: typeof ownerData) => {
@@ -80,7 +95,15 @@ export default function PlayerProfilePage() {
   };
 
   const handleOwnerStarClick = (key: 'batting_stars' | 'bowling_stars' | 'fielding_stars', star: number) => {
-    const updated = { ...ownerData, [key]: ownerData[key] === star ? null : star };
+    const newVal = ownerData[key] === star ? null : star;
+    const updated = { ...ownerData, [key]: newVal };
+    // Recompute live rating from all 3 stars
+    const stars = [
+      key === 'batting_stars' ? newVal : updated.batting_stars,
+      key === 'bowling_stars' ? newVal : updated.bowling_stars,
+      key === 'fielding_stars' ? newVal : updated.fielding_stars,
+    ].filter(v => v != null) as number[];
+    if (stars.length > 0) updated.overall_rating = Math.round((stars.reduce((a, b) => a + b, 0) / stars.length) * 10) / 10;
     setOwnerData(updated);
     handleSaveOwnerData(updated);
   };
@@ -157,8 +180,13 @@ export default function PlayerProfilePage() {
                 {getRoleIcon(player.player_role)} {player.player_role}
               </span>
             )}
-            <span>🏏 {player.batting_hand || 'Unknown hand'}</span>
-            <span>⚡ {player.bowling_style || 'Unknown style'}</span>
+            {player.batting_hand && <span>🏏 Bats: {player.batting_hand}</span>}
+            {player.bowling_style && <span>⚡ Bowls: {player.bowling_style}</span>}
+            {player.base_price != null && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#FFD700]/10 text-[#FFD700] font-semibold border border-[#FFD700]/20">
+                Base: {formatCurrency(player.base_price)}
+              </span>
+            )}
           </div>
         </div>
         <Button onClick={handleAIAnalysis} disabled={aiLoading}
@@ -443,6 +471,45 @@ export default function PlayerProfilePage() {
               )}
             </CardContent>
           )}
+        </Card>
+      )}
+
+      {/* Scouting (imported from registration) */}
+      {(ownerData.overall_rating != null || ownerData.grade || ownerData.should_buy != null || ownerData.owner_note) && (
+        <Card className="bg-[#1B3A8C]/10 border-[#1B3A8C]/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">🔍 Scouting</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3 items-center">
+              {ownerData.overall_rating != null && (
+                <div className="flex items-center gap-1.5 bg-[#FFD700]/10 border border-[#FFD700]/20 rounded-lg px-3 py-2">
+                  <span className="text-[#FFD700] text-lg font-black">{ownerData.overall_rating}</span>
+                  <span className="text-[#FFD700]/70 text-xs">/ 5</span>
+                  <span className="text-[10px] text-muted-foreground ml-1">Rating</span>
+                </div>
+              )}
+              {ownerData.grade && (
+                <div className="flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2">
+                  <span className="text-blue-300 text-lg font-black">{ownerData.grade}</span>
+                  <span className="text-[10px] text-muted-foreground ml-1">Grade</span>
+                </div>
+              )}
+              {ownerData.should_buy === true && (
+                <div className="flex items-center gap-1.5 bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">
+                  <span className="text-green-400 font-semibold text-sm">✓ Buy</span>
+                </div>
+              )}
+              {ownerData.should_buy === false && (
+                <div className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                  <span className="text-red-400 font-semibold text-sm">✗ Skip</span>
+                </div>
+              )}
+            </div>
+            {ownerData.owner_note && (
+              <p className="text-xs text-muted-foreground mt-3 bg-secondary rounded p-2 italic">"{ownerData.owner_note}"</p>
+            )}
+          </CardContent>
         </Card>
       )}
 

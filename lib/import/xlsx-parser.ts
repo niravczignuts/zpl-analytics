@@ -17,12 +17,38 @@ export interface RegistrationPlayer {
   group_number: number | null;
   base_price: number | null;
   is_captain_eligible: boolean;
+  role: string | null;
+  overall_rating: number | null;
+  grade: string | null;
+  should_buy: boolean | null;
+  note: string | null;
 }
 
 function pick(row: any, ...keys: string[]): string {
   for (const k of keys) {
     const val = row[k];
     if (val !== undefined && val !== null && String(val).trim() !== '') return String(val).trim();
+  }
+  return '';
+}
+
+// Case-insensitive fallback: finds the first row key whose lowercase matches any of the provided lowercase substrings
+function pickFuzzy(row: any, ...partials: string[]): string {
+  const rowKeys = Object.keys(row);
+  for (const partial of partials) {
+    const found = rowKeys.find(k => k.toLowerCase().trim() === partial.toLowerCase());
+    if (found) {
+      const val = row[found];
+      if (val !== undefined && val !== null && String(val).trim() !== '') return String(val).trim();
+    }
+  }
+  // Second pass: substring match
+  for (const partial of partials) {
+    const found = rowKeys.find(k => k.toLowerCase().includes(partial.toLowerCase()));
+    if (found) {
+      const val = row[found];
+      if (val !== undefined && val !== null && String(val).trim() !== '') return String(val).trim();
+    }
   }
   return '';
 }
@@ -40,14 +66,30 @@ function parseGroupNumber(raw: string | number | null | undefined): number | nul
 
 function parseBasePriceValue(raw: any): number | null {
   if (!raw) return null;
-  const n = Number(String(raw).replace(/[₹,\s]/g, ''));
+  const s = String(raw).trim();
+  // Handle lakh notation: "5L", "5.5L", "5 lakh", "5 lakhs"
+  const lakhMatch = s.match(/^[\s₹]*([\d.]+)\s*(?:L|lakh|lakhs)\b/i);
+  if (lakhMatch) return Math.round(parseFloat(lakhMatch[1]) * 100000);
+  // Handle crore notation: "1cr", "1 crore"
+  const croreMatch = s.match(/^[\s₹]*([\d.]+)\s*(?:cr|crore|crores)\b/i);
+  if (croreMatch) return Math.round(parseFloat(croreMatch[1]) * 10000000);
+  // Handle plain number with optional currency symbol/commas
+  const n = Number(s.replace(/[₹,\s]/g, ''));
   return isNaN(n) ? null : n;
 }
 
 export function parseRegistrationXlsx(input: string | Buffer): RegistrationPlayer[] {
   const wb = typeof input === 'string' ? XLSX.readFile(input) : XLSX.read(input, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<any>(ws, { defval: '' });
+  const rawRows = XLSX.utils.sheet_to_json<any>(ws, { defval: '' });
+  // Normalize row keys: trim whitespace and strip leading '#' so headers like '#Player Name' or ' Base Price ' work
+  const rows = rawRows.map((row: any) => {
+    const normalized: Record<string, any> = {};
+    for (const key of Object.keys(row)) {
+      normalized[key.trim().replace(/^#+/, '')] = row[key];
+    }
+    return normalized;
+  });
 
   const players: RegistrationPlayer[] = [];
   for (const row of rows) {
@@ -57,10 +99,10 @@ export function parseRegistrationXlsx(input: string | Buffer): RegistrationPlaye
     const lastName = pick(row,
       'Last Name', 'last_name', 'LastName', 'LAST NAME', 'last name', 'Surname', 'surname'
     );
-    // Single-column name fallback
+    // Single-column name fallback (also fuzzy)
     const singleName = pick(row,
       'Name', 'name', 'Player Name', 'player_name', 'PlayerName', 'PLAYER NAME', 'Full Name', 'full_name'
-    );
+    ) || pickFuzzy(row, 'player name', 'full name', 'name');
 
     let fullName: string;
     let fn = firstName;
@@ -78,10 +120,23 @@ export function parseRegistrationXlsx(input: string | Buffer): RegistrationPlaye
 
     if (!fullName) continue;
 
-    const gender = pick(row, 'Gender', 'gender', 'GENDER', 'Sex', 'sex') || 'Male';
-    const groupRaw = pick(row, 'Group', 'group', 'Group Number', 'group_number', 'GroupNumber', 'Player Group', 'Category');
-    const basePriceRaw = pick(row, 'Base Price', 'base_price', 'BasePrice', 'BASE PRICE', 'Price', 'price', 'Min Price');
+    const gender = pick(row, 'Gender', 'gender', 'GENDER', 'Sex', 'sex') || pickFuzzy(row, 'gender', 'sex') || 'Male';
+    const groupRaw = pick(row, 'Group', 'group', 'Group Number', 'group_number', 'GroupNumber', 'Player Group', 'Category')
+      || pickFuzzy(row, 'group', 'category');
+    const basePriceRaw = pick(row, 'Base Price', 'base_price', 'BasePrice', 'BASE PRICE', 'Price', 'price', 'Min Price',
+      'Minimum Price', 'minimum_price', 'min_price', 'Base Bid', 'base_bid', 'Min Bid', 'Starting Price', 'starting_price')
+      || pickFuzzy(row, 'base price', 'base_price', 'base bid', 'min price', 'min bid', 'starting price');
     const captainRaw = pick(row, 'Captain', 'captain', 'Is Captain', 'is_captain', 'Captain Eligible');
+    const roleRaw = pick(row, 'Role', 'role', 'ROLE', 'Player Role', 'Position', 'position')
+      || pickFuzzy(row, 'role', 'position');
+    const ratingRaw = pick(row, 'Rating', 'rating', 'RATING', 'Overall Rating', 'overall_rating')
+      || pickFuzzy(row, 'rating');
+    const gradeRaw = pick(row, 'Grade', 'grade', 'GRADE') || pickFuzzy(row, 'grade');
+    const buyRaw = pick(row, 'Buy?', 'Buy', 'buy', 'Should Buy', 'should_buy', 'BUY') || pickFuzzy(row, 'buy');
+    const noteRaw = pick(row, 'Note', 'note', 'Notes', 'notes', 'NOTE', 'Comment', 'comment')
+      || pickFuzzy(row, 'note', 'comment');
+
+    const ratingNum = ratingRaw ? Number(ratingRaw) : null;
 
     players.push({
       first_name: fn,
@@ -91,6 +146,11 @@ export function parseRegistrationXlsx(input: string | Buffer): RegistrationPlaye
       group_number: parseGroupNumber(groupRaw),
       base_price: parseBasePriceValue(basePriceRaw),
       is_captain_eligible: /yes|true|1/i.test(captainRaw),
+      role: roleRaw || null,
+      overall_rating: ratingRaw && !isNaN(ratingNum!) ? ratingNum : null,
+      grade: gradeRaw || null,
+      should_buy: buyRaw ? /yes|true|1|y/i.test(buyRaw) : null,
+      note: noteRaw || null,
     });
   }
   return players;

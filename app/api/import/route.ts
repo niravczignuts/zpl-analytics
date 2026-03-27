@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
       skipped: 0,
       created: 0,
       matched: 0,
+      with_base_price: 0,
       errors: [] as string[],
       skipped_names: [] as string[],
     };
@@ -39,6 +40,8 @@ export async function POST(req: NextRequest) {
     // ── Registration XLSX ────────────────────────────────────────────────────
     if (fileType === 'registration') {
       const players = parseRegistrationXlsx(buffer);
+      // Debug: log first 3 parsed players to server console
+      console.log('[Import] First 3 parsed players:', JSON.stringify(players.slice(0, 3), null, 2));
       if (players.length === 0) {
         return NextResponse.json({
           error: 'No players found. Check column names: First Name + Last Name (or Name/Player Name), Gender, Group, Base Price',
@@ -61,7 +64,10 @@ export async function POST(req: NextRequest) {
           let playerId: string;
 
           if (match) {
-            if (rp.gender) await db.updatePlayer(match.id, { gender: rp.gender });
+            const playerUpdate: any = {};
+            if (rp.gender) playerUpdate.gender = rp.gender;
+            if (rp.role) playerUpdate.player_role = rp.role;
+            if (Object.keys(playerUpdate).length) await db.updatePlayer(match.id, playerUpdate);
             playerId = match.id;
             result.matched++;
           } else {
@@ -72,6 +78,7 @@ export async function POST(req: NextRequest) {
               first_name: parts[0],
               last_name: parts.slice(1).join(' ') || '',
               gender: rp.gender || 'Male',
+              ...(rp.role ? { player_role: rp.role } : {}),
             });
             candidates.push({ id: playerId, name: rp.full_name });
             result.created++;
@@ -85,6 +92,19 @@ export async function POST(req: NextRequest) {
             is_captain_eligible: rp.is_captain_eligible ?? false,
             registration_status: 'verified',
           });
+
+          // Save owner assessment data from registration file
+          if (rp.overall_rating != null || rp.grade || rp.should_buy != null || rp.note) {
+            await db.upsertPlayerOwnerData({
+              player_id: playerId,
+              ...(rp.overall_rating != null ? { overall_rating: rp.overall_rating } : {}),
+              ...(rp.grade ? { grade: rp.grade } : {}),
+              ...(rp.should_buy != null ? { should_buy: rp.should_buy } : {}),
+              ...(rp.note ? { owner_note: rp.note } : {}),
+            });
+          }
+
+          if (rp.base_price != null) result.with_base_price++;
           result.imported++;
         } catch (e: any) {
           result.errors.push(`${rp.full_name}: ${e.message}`);
@@ -154,11 +174,6 @@ export async function POST(req: NextRequest) {
     // ── Stats CSVs ───────────────────────────────────────────────────────────
     } else {
       const allPlayers = await db.rawQuery('SELECT id, first_name, last_name, external_id FROM players', []);
-      if (allPlayers.length === 0) {
-        return NextResponse.json({
-          error: 'No players in database. Import Player Registration first before importing stats.',
-        }, { status: 422 });
-      }
 
       const candidates = allPlayers.map((p: any) => ({
         id: p.id,
@@ -168,17 +183,48 @@ export async function POST(req: NextRequest) {
 
       const csvText = buffer.toString('utf-8');
 
-      const findPlayer = async (extId: string, name: string): Promise<string | null> => {
+      const findPlayer = async (
+        extId: string,
+        name: string,
+        extra?: { batting_hand?: string; bowling_style?: string }
+      ): Promise<string | null> => {
+        // 1. Try by external_id first (most reliable)
         if (extId) {
           const byExt = allPlayers.find((p: any) => p.external_id === extId);
           if (byExt) return byExt.id;
         }
+        // 2. Try fuzzy name match
         const match = findBestMatch(name, candidates, 0.78);
         if (match) {
-          if (extId) await db.updatePlayer(match.id, { external_id: extId });
+          const updates: any = {};
+          if (extId) updates.external_id = extId;
+          // Fill in batting/bowling info if not already set
+          if (extra?.batting_hand && extra.batting_hand !== '-') updates.batting_hand = extra.batting_hand;
+          if (extra?.bowling_style && extra.bowling_style !== '-') updates.bowling_style = extra.bowling_style;
+          if (Object.keys(updates).length) await db.updatePlayer(match.id, updates);
+          if (extId) {
+            const found = allPlayers.find((p: any) => p.id === match.id);
+            if (found) found.external_id = extId;
+          }
           return match.id;
         }
-        return null;
+        // 3. Not found — auto-create as historical player so past stats are preserved
+        if (!name || !name.trim()) return null;
+        const nameTrim = name.trim();
+        const parts = nameTrim.split(/\s+/);
+        const newId = uuidv4();
+        await db.createPlayer({
+          id: newId,
+          first_name: parts[0],
+          last_name: parts.slice(1).join(' ') || '',
+          external_id: extId || null,
+          batting_hand: (extra?.batting_hand && extra.batting_hand !== '-') ? extra.batting_hand : null,
+          bowling_style: (extra?.bowling_style && extra.bowling_style !== '-') ? extra.bowling_style : null,
+        });
+        allPlayers.push({ id: newId, first_name: parts[0], last_name: parts.slice(1).join(' ') || '', external_id: extId || null });
+        candidates.push({ id: newId, name: nameTrim, external_id: extId || null });
+        result.created++;
+        return newId;
       };
 
       if (fileType === 'batting') {
@@ -186,7 +232,7 @@ export async function POST(req: NextRequest) {
         if (rows.length === 0) return NextResponse.json({ error: 'No batting rows found. Check CSV format.' }, { status: 422 });
         await db.clearPlayerStats(seasonId, 'batting');
         for (const r of rows) {
-          const pid = await findPlayer(r.external_id, r.name);
+          const pid = await findPlayer(r.external_id, r.name, { batting_hand: r.stats.batting_hand });
           if (pid) { await db.upsertPlayerStats(pid, seasonId, 'batting', r.stats); result.imported++; result.matched++; }
           else { result.skipped++; result.skipped_names.push(r.name); }
         }
@@ -195,7 +241,7 @@ export async function POST(req: NextRequest) {
         if (rows.length === 0) return NextResponse.json({ error: 'No bowling rows found. Check CSV format.' }, { status: 422 });
         await db.clearPlayerStats(seasonId, 'bowling');
         for (const r of rows) {
-          const pid = await findPlayer(r.external_id, r.name);
+          const pid = await findPlayer(r.external_id, r.name, { bowling_style: r.stats.bowling_style });
           if (pid) { await db.upsertPlayerStats(pid, seasonId, 'bowling', r.stats); result.imported++; result.matched++; }
           else { result.skipped++; result.skipped_names.push(r.name); }
         }
@@ -213,7 +259,7 @@ export async function POST(req: NextRequest) {
         if (rows.length === 0) return NextResponse.json({ error: 'No MVP rows found. Expected columns: Player Name, Total.' }, { status: 422 });
         await db.clearPlayerStats(seasonId, 'mvp');
         for (const r of rows) {
-          const pid = await findPlayer('', r.name);
+          const pid = await findPlayer('', r.name, { batting_hand: r.stats.batting_hand, bowling_style: r.stats.bowling_style });
           if (pid) { await db.upsertPlayerStats(pid, seasonId, 'mvp', r.stats); result.imported++; result.matched++; }
           else { result.skipped++; result.skipped_names.push(r.name); }
         }

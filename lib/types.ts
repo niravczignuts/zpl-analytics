@@ -208,6 +208,9 @@ export interface PlayerOwnerData {
   bowling_stars: number | null;
   fielding_stars: number | null;
   owner_note: string;
+  grade: string | null;           // e.g. "A", "B+", "C"
+  should_buy: boolean | null;     // from "Buy?" column
+  overall_rating: number | null;  // numeric rating from registration file
   updated_at: string;
 }
 
