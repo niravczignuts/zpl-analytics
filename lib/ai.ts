@@ -4,31 +4,37 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const ZPL_SYSTEM_PROMPT = `You are ZPL Analytics AI — an expert cricket analyst for the Zignuts Premier League (ZPL), a corporate T12 cricket tournament at Zignuts Technolab.
+const ZPL_SYSTEM_PROMPT = `You are ZPL Analytics AI — a SENIOR CRICKET ANALYST for the Zignuts Premier League (ZPL), a corporate T12 cricket tournament at Zignuts Technolab. You write like an ESPNCricinfo senior analyst — precise, data-driven, and tactically astute.
 
-You have deep knowledge of every player's historical performance across ZPL 2024 and 2025 seasons.
+You have deep knowledge of every player's historical performance across ZPL 2024, 2025, and 2026 seasons.
 
-Tournament Format:
-- 12-over format (T12)
-- Squad: 12 players, Playing XI: 11
+ZPL 2026 Tournament Format:
+- T12 format (12 overs per innings)
+- Squad: 13 players, Playing XI: 11
 - Max 3 overs per bowler
-- Girls' First Over Rule: First over must be bowled by a girl. Only 4 players on field (2 compulsory: keeper + bowler). Runs scored are DOUBLED (except wides/no-balls which count normally)
-- Powerplay: First 3 overs
-- Impact Player: One substitution allowed mid-match (like IPL)
+- Girls' First Over Rule: The 1st over MUST be bowled by a girl. Only 4 fielders allowed (2 compulsory: keeper + bowler). ALL runs scored are DOUBLED (except wides/no-balls which count normally). A girl conceding 10 real runs = 20 on the scoreboard — this single over can swing a match.
+- Powerplay: Overs 1–3
+- Impact Player: One substitution allowed per innings (like IPL impact player)
 - DRS: 1 review per team per innings
 - At least 2 girls must be in the playing XI
+- 8 teams compete in league format
 
-Auction Rules:
-- Budget: ₹2.5 Crore (₹25,000,000) per team
-- Max 12 players per team
-- Players in groups: Group A – Star, Group B – Good, Group C – Average, Group D – Poor, No Group
-- Girls must be auctioned first
+Auction (2026):
+- Budget: ₹3 Crore (₹30,000,000) per team
+- 13 players per squad
+- Captain values are pre-fixed and deducted from budget
+- Player groups: Group A – Star, Group B – Good, Group C – Average, Group D – Poor, No Group
+- Girls are auctioned first
 
-You analyze cricket data like a professional cricket analyst. Be specific with numbers, reference actual player stats, and give actionable tactical advice.
+When you analyze, ALWAYS:
+1. Reference specific player stats by name (runs, wickets, economy, average, strike rate)
+2. In T12, economy and strike rate matter MORE than raw averages — be explicit about this
+3. The girls' first over is the highest-leverage moment of the match — analyse it carefully
+4. Be professional, tactical, and specific — write like a senior analyst, not a chatbot
+5. Use ONLY the data provided — never invent or fabricate statistics
+6. Format with clear Markdown headings (##) and bullet points
 
-When providing analysis, always consider the unique ZPL rules especially the girls' first over (runs doubled — this makes a strong girl bowler extremely valuable) and the 12-over format where every ball counts.
-
-Respond in clear, structured format. For JSON requests, respond with valid JSON only.`;
+For JSON requests, respond with valid JSON only.`;
 
 export interface AISuggestionParams {
   context: string;
@@ -44,7 +50,7 @@ export async function queryZPLAI(params: AISuggestionParams): Promise<string> {
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 2048,
+    max_tokens: 4096,
     system: ZPL_SYSTEM_PROMPT + (params.context ? `\n\nAdditional Context:\n${params.context}` : ''),
     messages: [{ role: 'user', content: userMessage }],
   });
@@ -129,29 +135,65 @@ export async function getMatchStrategy(params: {
   opponentTeam: any;
   seasonRules?: any;
 }): Promise<string> {
+  const fmtPlayer = (p: any) => {
+    const gender = p.gender === 'Female' ? ' ♀' : '';
+    const bat = p.batting
+      ? `${p.batting.total_runs ?? 0}r / avg ${Number(p.batting.average ?? 0).toFixed(1)} / SR ${Number(p.batting.strike_rate ?? 0).toFixed(0)}`
+      : 'No bat data';
+    const bowl = p.bowling
+      ? `${p.bowling.total_wickets ?? 0}wkts / eco ${Number(p.bowling.economy ?? 0).toFixed(2)}`
+      : 'No bowl data';
+    return `  • ${p.first_name} ${p.last_name}${gender} | ${p.player_role || 'Unknown'} | Bat: ${bat} | Bowl: ${bowl}`;
+  };
+
+  const girlsYour = (params.yourTeam.players || []).filter((p: any) => p.gender === 'Female');
+  const girlsOpp  = (params.opponentTeam.players || []).filter((p: any) => p.gender === 'Female');
+  const girlBowlersOpp = girlsOpp.filter((p: any) => (p.bowling?.total_wickets ?? 0) > 0);
+
   const query = `
-Pre-Match Strategy Request
+## PRE-MATCH STRATEGY DOSSIER REQUEST
+You are a SENIOR ZPL MATCH ANALYST. Produce an exhaustive, actionable pre-match strategy dossier.
 
-YOUR TEAM: ${params.yourTeam.name}
-Squad (${params.yourTeam.players?.length || 0} players):
-${(params.yourTeam.players || []).map((p: any) => `  - ${p.first_name} ${p.last_name} (${p.player_role || 'Unknown'}) | ${p.batting ? `Bat: ${p.batting.total_runs}r/${p.batting.average}avg` : ''} | ${p.bowling ? `Bowl: ${p.bowling.total_wickets}wkts/${p.bowling.economy}eco` : ''}`).join('\n')}
+═══ YOUR TEAM: ${params.yourTeam.name?.toUpperCase()} (${params.yourTeam.players?.length ?? 0} players) ═══
+Girls in squad (${girlsYour.length}): ${girlsYour.map((p: any) => `${p.first_name} ${p.last_name}`).join(', ') || 'None'}
+${(params.yourTeam.players || []).map(fmtPlayer).join('\n')}
 
-OPPONENT: ${params.opponentTeam.name}
-Squad (${params.opponentTeam.players?.length || 0} players):
-${(params.opponentTeam.players || []).map((p: any) => `  - ${p.first_name} ${p.last_name} (${p.player_role || 'Unknown'}) | ${p.batting ? `Bat: ${p.batting.total_runs}r` : ''} | ${p.bowling ? `Bowl: ${p.bowling.total_wickets}wkts` : ''}`).join('\n')}
+═══ OPPOSITION: ${params.opponentTeam.name?.toUpperCase()} (${params.opponentTeam.players?.length ?? 0} players) ═══
+Girls in squad (${girlsOpp.length}): ${girlsOpp.map((p: any) => `${p.first_name} ${p.last_name}`).join(', ') || 'None'}
+Opposition girl bowlers (first-over threat): ${girlBowlersOpp.map((p: any) => `${p.first_name} ${p.last_name} (${p.bowling.total_wickets}wkts, eco ${Number(p.bowling.economy ?? 0).toFixed(2)})`).join(', ') || 'None known'}
+${(params.opponentTeam.players || []).map(fmtPlayer).join('\n')}
 
-Provide:
-1. Recommended Playing XI (pick 11 from squad, must include at least 2 girls)
-2. Batting order (1-11) with reasoning
-3. Bowling plan (who bowls which overs, respecting 3-over max)
-4. Girls' first over strategy (who bowls, field placement for 4-player restriction)
-5. Powerplay strategy (overs 1-3)
-6. Death overs plan (overs 10-12)
-7. Impact player recommendation
-8. Key opposition threats and counter-strategies
-9. Win probability assessment`;
+---
+Write a COMPLETE PRE-MATCH STRATEGY DOSSIER for ${params.yourTeam.name}. Use these EXACT section headings (##):
 
-  return queryZPLAI({ context: '', query });
+## Recommended Playing XI
+List all 11 players with role. Explain why each was picked. Must include ≥2 girls. Who sits out and why?
+
+## Batting Order (1–11)
+Name each slot with batting style + rationale. Who opens? Who anchors the middle? Who finishes?
+
+## Bowling Plan
+List the over-by-over bowling rotation. For each bowler: name, phase (powerplay/middle/death), overs allocated, reason. Max 3 overs each.
+
+## Girls' First Over Strategy
+Name the girl bowler. Field set (4 fielders: keeper + bowler + 2 others — where do they stand?). What line and length to bowl? How to minimise the double-run damage?
+
+## Powerplay Strategy (Overs 1–3)
+Batting approach (attack or consolidate?). Bowling choices. Field settings.
+
+## Death Overs Plan (Overs 10–12)
+Who bowls the final overs? Specific deliveries (yorkers, slower balls, wide yorkers). Batting targets.
+
+## Impact Player Option
+Name 2 potential impact players for batting and bowling scenarios. When do you bring them in?
+
+## Opposition Threat Analysis
+Identify the top 3 opposition threats by name with their stats. Specific counter-strategies for each.
+
+## Win Probability Assessment
+Give a % win estimate. Explain the key factors that determine the outcome — specifically the girls' over, powerplay result, and death bowling.`;
+
+  return queryZPLAI({ context: '', query, responseFormat: 'text' });
 }
 
 export async function getPlayerAnalysis(params: {
@@ -319,23 +361,88 @@ export async function getTeamComparison(params: {
   team1: any;
   team2: any;
 }): Promise<string> {
+  const fmtPlayer = (p: any) => {
+    const gender = p.gender === 'Female' ? ' ♀' : '';
+    const price = p.purchase_price ? ` [₹${(p.purchase_price / 100000).toFixed(0)}L]` : '';
+    const bat = p.batting
+      ? `${p.batting.total_runs ?? 0}r / avg ${Number(p.batting.average ?? 0).toFixed(1)} / SR ${Number(p.batting.strike_rate ?? 0).toFixed(0)}`
+      : '—';
+    const bowl = p.bowling
+      ? `${p.bowling.total_wickets ?? 0}wkts / eco ${Number(p.bowling.economy ?? 0).toFixed(2)} / avg ${Number(p.bowling.average ?? 0).toFixed(1)}`
+      : '—';
+    const mvp = p.mvp ? ` / MVP ${Number(p.mvp.total_score ?? 0).toFixed(1)}` : '';
+    return `  • ${p.first_name} ${p.last_name}${gender}${price} | ${p.player_role || 'Unknown'} | Bat: ${bat} | Bowl: ${bowl}${mvp}`;
+  };
+
+  const teamSummary = (t: any) => {
+    const ps = t.players || [];
+    const girls = ps.filter((p: any) => p.gender === 'Female');
+    const girlBowlers = girls.filter((p: any) => (p.bowling?.total_wickets ?? 0) > 0);
+    const allRuns = ps.reduce((s: number, p: any) => s + (p.batting?.total_runs ?? 0), 0);
+    const allWkts = ps.reduce((s: number, p: any) => s + (p.bowling?.total_wickets ?? 0), 0);
+    const ecoBowlers = ps.filter((p: any) => (p.bowling?.economy ?? 0) > 0);
+    const avgEco = ecoBowlers.length
+      ? (ecoBowlers.reduce((s: number, p: any) => s + p.bowling.economy, 0) / ecoBowlers.length).toFixed(2)
+      : 'N/A';
+    const topBatter = [...ps].sort((a, b) => (b.batting?.total_runs ?? 0) - (a.batting?.total_runs ?? 0))[0];
+    const topBowler = [...ps].sort((a, b) => (b.bowling?.total_wickets ?? 0) - (a.bowling?.total_wickets ?? 0))[0];
+    const topEco    = [...ecoBowlers].sort((a, b) => (a.bowling?.economy ?? 99) - (b.bowling?.economy ?? 99))[0];
+    return { girls, girlBowlers, allRuns, allWkts, avgEco, topBatter, topBowler, topEco };
+  };
+
+  const s1 = teamSummary(params.team1);
+  const s2 = teamSummary(params.team2);
+
   const query = `
-Head-to-Head Team Comparison
+## HEAD-TO-HEAD COMPARISON REQUEST
+You are a SENIOR ZPL ANALYST. Write an authoritative, data-driven comparison report.
 
-TEAM A: ${params.team1.name}
-${JSON.stringify(params.team1.players?.slice(0, 12), null, 2)}
+═══ ${params.team1.name?.toUpperCase()} (${params.team1.players?.length ?? 0} players) ═══
+Total career runs: ${s1.allRuns} | Total wickets: ${s1.allWkts} | Avg economy: ${s1.avgEco}
+Girls (${s1.girls.length}): ${s1.girls.map((p: any) => `${p.first_name} ${p.last_name}`).join(', ') || 'None'}
+Girl bowlers (1st over candidates): ${s1.girlBowlers.map((p: any) => `${p.first_name} ${p.last_name} — ${p.bowling.total_wickets}wkts, eco ${Number(p.bowling.economy ?? 0).toFixed(2)}`).join(' | ') || 'None'}
+Top batter: ${s1.topBatter ? `${s1.topBatter.first_name} ${s1.topBatter.last_name} (${s1.topBatter.batting?.total_runs ?? 0}r, avg ${Number(s1.topBatter.batting?.average ?? 0).toFixed(1)}, SR ${Number(s1.topBatter.batting?.strike_rate ?? 0).toFixed(0)})` : 'N/A'}
+Top wicket-taker: ${s1.topBowler ? `${s1.topBowler.first_name} ${s1.topBowler.last_name} (${s1.topBowler.bowling?.total_wickets ?? 0}wkts, eco ${Number(s1.topBowler.bowling?.economy ?? 0).toFixed(2)})` : 'N/A'}
+Most economical: ${s1.topEco ? `${s1.topEco.first_name} ${s1.topEco.last_name} (eco ${Number(s1.topEco.bowling?.economy ?? 0).toFixed(2)})` : 'N/A'}
+Full squad:
+${(params.team1.players || []).map(fmtPlayer).join('\n')}
 
-TEAM B: ${params.team2.name}
-${JSON.stringify(params.team2.players?.slice(0, 12), null, 2)}
+═══ ${params.team2.name?.toUpperCase()} (${params.team2.players?.length ?? 0} players) ═══
+Total career runs: ${s2.allRuns} | Total wickets: ${s2.allWkts} | Avg economy: ${s2.avgEco}
+Girls (${s2.girls.length}): ${s2.girls.map((p: any) => `${p.first_name} ${p.last_name}`).join(', ') || 'None'}
+Girl bowlers (1st over candidates): ${s2.girlBowlers.map((p: any) => `${p.first_name} ${p.last_name} — ${p.bowling.total_wickets}wkts, eco ${Number(p.bowling.economy ?? 0).toFixed(2)}`).join(' | ') || 'None'}
+Top batter: ${s2.topBatter ? `${s2.topBatter.first_name} ${s2.topBatter.last_name} (${s2.topBatter.batting?.total_runs ?? 0}r, avg ${Number(s2.topBatter.batting?.average ?? 0).toFixed(1)}, SR ${Number(s2.topBatter.batting?.strike_rate ?? 0).toFixed(0)})` : 'N/A'}
+Top wicket-taker: ${s2.topBowler ? `${s2.topBowler.first_name} ${s2.topBowler.last_name} (${s2.topBowler.bowling?.total_wickets ?? 0}wkts, eco ${Number(s2.topBowler.bowling?.economy ?? 0).toFixed(2)})` : 'N/A'}
+Most economical: ${s2.topEco ? `${s2.topEco.first_name} ${s2.topEco.last_name} (eco ${Number(s2.topEco.bowling?.economy ?? 0).toFixed(2)})` : 'N/A'}
+Full squad:
+${(params.team2.players || []).map(fmtPlayer).join('\n')}
 
-Provide a detailed comparison:
-1. Overall strength verdict
-2. Batting comparison (depth, power hitters, anchor batters)
-3. Bowling comparison (variety, economy, wicket-taking ability)
-4. Fielding comparison
-5. Girls' over advantage (who has the stronger girl bowler?)
-6. Key matchups to watch
-7. Predicted winner with reasoning`;
+---
+Write a COMPREHENSIVE HEAD-TO-HEAD ANALYST REPORT. Use these EXACT section headings (##):
 
-  return queryZPLAI({ context: '', query });
+## Executive Summary
+2–3 decisive sentences: who looks stronger and why.
+
+## Batting Comparison
+Compare T12 strike rates, run-scorers, power hitters, and anchors. Name players with stats. Who has the batting edge?
+
+## Bowling Comparison
+Economy rates, wicket-taking threats, pace vs spin variety. Who wins the bowling battle?
+
+## Girls' Over Analysis
+The match's highest-leverage moment. Who has the better girl bowler? Estimate how many "real runs" each girl bowler concedes per over, then show the doubled impact on the scoreboard.
+
+## Key Player Battles
+3 specific head-to-head player match-ups to watch, backed by stats.
+
+## Tactical Strengths & Weaknesses
+Each team's structural advantages and exploitable weaknesses.
+
+## Squad Depth & Flexibility
+Bench quality, all-rounders, and impact player options for each side.
+
+## Predicted Winner
+Name the winner, provide a win % estimate, and justify with specific statistical reasoning.`;
+
+  return queryZPLAI({ context: '', query, responseFormat: 'text' });
 }
