@@ -35,6 +35,7 @@ import {
   Undo2,
   AlertCircle,
   Star,
+  Tag,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ interface AuctionPurchase {
   purchase_price: number;
   player_name?: string;
   team_name?: string;
-  team_role?: 'player' | 'captain' | 'manager';
+  team_role?: 'player' | 'captain' | 'manager' | 'unsold';
   is_captain?: number;
 }
 
@@ -223,6 +224,9 @@ export default function AuctionPage() {
   const [bidAdviceLoading, setBidAdviceLoading] = useState(false);
   const [bidAdviceError, setBidAdviceError] = useState('');
 
+  // Unsold state
+  const [markingUnsold, setMarkingUnsold] = useState<string | null>(null);
+
   // Owner ratings + notes state
   const [ownerData, setOwnerData] = useState<{ batting_stars: number|null; bowling_stars: number|null; fielding_stars: number|null; owner_note: string; grade: string|null; should_buy: boolean|null; overall_rating: number|null }>({
     batting_stars: null, bowling_stars: null, fielding_stars: null, owner_note: '', grade: null, should_buy: null, overall_rating: null
@@ -292,8 +296,8 @@ export default function AuctionPage() {
       .finally(() => setPlayerDetailLoading(false));
   }, [selectedPlayer]);
 
-  // Only real auction purchases — excludes pre-assigned captain/manager entries
-  const auctionPurchases = purchases.filter(p => !p.team_role || p.team_role === 'player');
+  // All auction-tracked purchases — excludes pre-assigned captain/manager entries
+  const auctionPurchases = purchases.filter(p => !p.team_role || p.team_role === 'player' || p.team_role === 'unsold');
 
   // ── Filtered player list ───────────────────────────────────────────────────
 
@@ -355,6 +359,68 @@ export default function AuctionPage() {
       setPurchasePrice('');
       setAiSuggestion(null);
       setBidAdvice(null);
+      await fetchAll();
+    } catch (e: any) {
+      setPurchaseError(e.message);
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  // ── Mark player as Unsold / undo ──────────────────────────────────────────
+
+  const handleMarkUnsold = async (player: AvailablePlayer, undo = false) => {
+    setMarkingUnsold(player.id);
+    try {
+      await fetch('/api/auction/mark-unsold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ season_id: currentSeasonId, player_id: player.id, undo }),
+      });
+      const newStatus = undo ? 'registered' : 'unsold';
+      setAvailablePlayers(prev => prev.map(p => p.id === player.id ? { ...p, registration_status: newStatus } : p));
+      if (selectedPlayer?.id === player.id) {
+        setSelectedPlayer(prev => prev ? { ...prev, registration_status: newStatus } : null);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setMarkingUnsold(null);
+    }
+  };
+
+  // ── Add unsold player to team (no budget / squad-limit check) ─────────────
+
+  const handleAddUnsold = async () => {
+    if (!selectedPlayer || !selectedTeamId) {
+      setPurchaseError('Select a team to add this player to.');
+      return;
+    }
+    setPurchasing(true);
+    setPurchaseError('');
+    setPurchaseSuccess('');
+    try {
+      const res = await fetch('/api/auction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          season_id: currentSeasonId,
+          team_id: selectedTeamId,
+          player_id: selectedPlayer.id,
+          purchase_price: 0,
+          group_number: selectedPlayer.group_number,
+          team_role: 'unsold',
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to add player');
+      }
+      const teamName = teams.find(t => t.id === selectedTeamId)?.name || '';
+      setPurchaseSuccess(`${playerFullName(selectedPlayer)} added to ${teamName} as an additional (unsold) player.`);
+      setSelectedPlayer(null);
+      setSelectedTeamId('');
+      setAiSuggestion(null);
       await fetchAll();
     } catch (e: any) {
       setPurchaseError(e.message);
@@ -597,19 +663,23 @@ export default function AuctionPage() {
                 const isSelected = selectedPlayer?.id === player.id;
                 const groupColor = getGroupColor(player.group_number || 0);
                 return (
-                  <button
+                  <div
                     key={player.id}
-                    onClick={() => {
-                      setSelectedPlayer(isSelected ? null : player);
-                      setPurchaseError('');
-                      setPurchaseSuccess('');
-                    }}
                     className={cn(
-                      'w-full text-left px-3 py-2.5 transition-all hover:bg-[#FFD700]/5',
-                      isSelected && 'bg-[#FFD700]/10 border-l-2 border-[#FFD700]'
+                      'w-full text-left px-3 py-2.5 transition-all hover:bg-[#FFD700]/5 flex items-start gap-2 group/row',
+                      isSelected && 'bg-[#FFD700]/10 border-l-2 border-[#FFD700]',
+                      player.registration_status === 'unsold' && 'bg-orange-500/5 border-l-2 border-orange-500/40'
                     )}
                   >
-                    <div className="flex items-start gap-2">
+                    {/* Clickable area */}
+                    <button
+                      className="flex items-start gap-2 flex-1 min-w-0"
+                      onClick={() => {
+                        setSelectedPlayer(isSelected ? null : player);
+                        setPurchaseError('');
+                        setPurchaseSuccess('');
+                      }}
+                    >
                       {/* Player mini avatar */}
                       <div className="w-7 h-7 rounded-full shrink-0 overflow-hidden bg-[#1B3A8C] flex items-center justify-center text-xs mt-0.5 border border-white/10">
                         {player.photo_url ? (
@@ -637,18 +707,38 @@ export default function AuctionPage() {
                           {player.gender === 'Female' && (
                             <span className="text-[10px] px-1 py-0.5 rounded bg-pink-500/20 text-pink-300">♀</span>
                           )}
-                          {player.registration_status === 'not_for_sale' && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-semibold">NFS</span>
+                          {player.registration_status === 'unsold' && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-semibold">UNSOLD</span>
                           )}
                         </div>
                       </div>
-                      {player.base_price != null && player.registration_status !== 'not_for_sale' && (
+                      {player.base_price != null && player.registration_status !== 'not_for_sale' && player.registration_status !== 'unsold' && (
                         <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">
                           {formatCurrency(player.base_price)}
                         </span>
                       )}
-                    </div>
-                  </button>
+                    </button>
+
+                    {/* Mark Unsold / Undo Unsold button */}
+                    {player.registration_status !== 'not_for_sale' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleMarkUnsold(player, player.registration_status === 'unsold'); }}
+                        disabled={markingUnsold === player.id}
+                        title={player.registration_status === 'unsold' ? 'Undo Unsold' : 'Mark as Unsold'}
+                        className={cn(
+                          'shrink-0 mt-1 p-1 rounded transition-all opacity-0 group-hover/row:opacity-100',
+                          player.registration_status === 'unsold'
+                            ? 'text-orange-400 hover:bg-orange-500/20 opacity-100'
+                            : 'text-muted-foreground/40 hover:text-orange-400 hover:bg-orange-500/10'
+                        )}
+                      >
+                        {markingUnsold === player.id
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <Tag className="w-3 h-3" />
+                        }
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -1028,7 +1118,7 @@ export default function AuctionPage() {
                   )}
                 </div>
 
-                {/* Purchase controls — blocked for NFS players */}
+                {/* Purchase controls */}
                 {selectedPlayer.registration_status === 'not_for_sale' ? (
                   <div className="border-t border-border pt-4">
                     <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
@@ -1041,7 +1131,69 @@ export default function AuctionPage() {
                       </div>
                     </div>
                   </div>
+                ) : selectedPlayer.registration_status === 'unsold' ? (
+                  /* ── Unsold additional player flow ── */
+                  <div className="border-t border-orange-500/30 pt-4 space-y-3">
+                    <div className="flex items-start gap-3 bg-orange-500/10 border border-orange-500/30 rounded-lg px-4 py-3">
+                      <Tag className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-orange-400">Unsold Player</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Can be added to any team as an additional player at ₹0, beyond squad limit and budget.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleMarkUnsold(selectedPlayer, true)}
+                        disabled={markingUnsold === selectedPlayer.id}
+                        className="text-[10px] text-muted-foreground hover:text-orange-400 underline shrink-0"
+                      >
+                        Undo
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Add to Team</label>
+                      <select
+                        value={selectedTeamId}
+                        onChange={e => { setSelectedTeamId(e.target.value); setPurchaseError(''); }}
+                        className="w-full bg-background border border-border text-sm rounded-md px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#FFD700]"
+                      >
+                        <option value="">Select team…</option>
+                        {teams.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.players_bought}/{t.max_players} players)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {purchaseError && (
+                      <div className="flex items-center gap-2 text-destructive text-xs bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {purchaseError}
+                      </div>
+                    )}
+                    {purchaseSuccess && (
+                      <div className="flex items-center gap-2 text-green-400 text-xs bg-green-400/10 border border-green-400/20 rounded-md px-3 py-2">
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                        {purchaseSuccess}
+                      </div>
+                    )}
+
+                    <Button
+                      onClick={handleAddUnsold}
+                      disabled={purchasing || !selectedTeamId}
+                      className="w-full bg-orange-500 hover:bg-orange-500/90 text-white font-bold h-10"
+                    >
+                      {purchasing ? (
+                        <><Spinner className="mr-2 w-4 h-4" /> Adding…</>
+                      ) : (
+                        <><Tag className="w-4 h-4 mr-2" /> Add as Additional Player</>
+                      )}
+                    </Button>
+                  </div>
                 ) : (
+                  /* ── Normal auction purchase flow ── */
                   <div className="border-t border-border pt-4 space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -1085,17 +1237,31 @@ export default function AuctionPage() {
                       </div>
                     )}
 
-                    <Button
-                      onClick={handlePurchase}
-                      disabled={purchasing || !selectedTeamId || !purchasePrice}
-                      className="w-full bg-[#FFD700] hover:bg-[#FFD700]/90 text-[#1B3A8C] font-bold h-10"
-                    >
-                      {purchasing ? (
-                        <><Spinner className="mr-2 w-4 h-4" /> Processing…</>
-                      ) : (
-                        <><Gavel className="w-4 h-4 mr-2" /> Confirm Purchase</>
-                      )}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={handlePurchase}
+                        disabled={purchasing || !selectedTeamId || !purchasePrice}
+                        className="flex-1 bg-[#FFD700] hover:bg-[#FFD700]/90 text-[#1B3A8C] font-bold h-10"
+                      >
+                        {purchasing ? (
+                          <><Spinner className="mr-2 w-4 h-4" /> Processing…</>
+                        ) : (
+                          <><Gavel className="w-4 h-4 mr-2" /> Confirm Purchase</>
+                        )}
+                      </Button>
+                      <Button
+                        onClick={() => handleMarkUnsold(selectedPlayer)}
+                        disabled={markingUnsold === selectedPlayer.id}
+                        variant="outline"
+                        className="border-orange-500/40 text-orange-400 hover:bg-orange-500/10 h-10 px-3"
+                        title="Mark as Unsold"
+                      >
+                        {markingUnsold === selectedPlayer.id
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : <Tag className="w-4 h-4" />
+                        }
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CardContent>

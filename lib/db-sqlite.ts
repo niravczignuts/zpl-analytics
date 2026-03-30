@@ -230,6 +230,12 @@ export class SQLiteDB {
       data.registration_status || 'registered');
   }
 
+  updateRegistrationStatus(playerId: string, seasonId: string, status: string): void {
+    this.db.prepare(
+      'UPDATE season_registrations SET registration_status = ? WHERE player_id = ? AND season_id = ?'
+    ).run(status, playerId, seasonId);
+  }
+
   // ─── Teams ───────────────────────────────────────────────────────────────────
   getTeams(seasonId: string): Team[] {
     return this.db.prepare('SELECT * FROM teams WHERE season_id = ? ORDER BY name').all(seasonId) as Team[];

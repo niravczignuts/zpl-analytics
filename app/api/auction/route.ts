@@ -18,8 +18,12 @@ export async function POST(req: Request) {
   try {
     const db = getDB();
     const body = await req.json();
-    const { season_id, team_id, player_id, purchase_price, group_number, is_captain } = body;
-    if (!season_id || !team_id || !player_id || !purchase_price) {
+    const { season_id, team_id, player_id, purchase_price, group_number, is_captain, team_role } = body;
+
+    const isUnsold = team_role === 'unsold';
+    const price = isUnsold ? 0 : purchase_price;
+
+    if (!season_id || !team_id || !player_id || (!isUnsold && !purchase_price)) {
       return NextResponse.json({ error: 'season_id, team_id, player_id, purchase_price required' }, { status: 400 });
     }
 
@@ -42,16 +46,24 @@ export async function POST(req: Request) {
       );
     }
 
-    // Budget validation — unified pool (girls auction first, no separate limit)
-    const budget = await db.getTeamBudget(team_id, season_id);
-    if (purchase_price > budget.remaining) {
-      return NextResponse.json(
-        { error: `Exceeds available budget. Remaining: ₹${Math.round(budget.remaining).toLocaleString('en-IN')} (captain value ₹${Math.round(budget.captain_value).toLocaleString('en-IN')} deducted from 3 CR)` },
-        { status: 400 }
-      );
+    // Skip budget check for unsold additional players — they are added at ₹0 beyond squad limit
+    if (!isUnsold) {
+      const budget = await db.getTeamBudget(team_id, season_id);
+      if (price > budget.remaining) {
+        return NextResponse.json(
+          { error: `Exceeds available budget. Remaining: ₹${Math.round(budget.remaining).toLocaleString('en-IN')} (captain value ₹${Math.round(budget.captain_value).toLocaleString('en-IN')} deducted from 3 CR)` },
+          { status: 400 }
+        );
+      }
     }
 
-    const purchase = await db.recordPurchase({ season_id, team_id, player_id, purchase_price, group_number, is_captain });
+    const purchase = await db.recordPurchase({
+      season_id, team_id, player_id,
+      purchase_price: price,
+      group_number,
+      is_captain,
+      team_role: team_role || 'player',
+    });
     return NextResponse.json(purchase, { status: 201 });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

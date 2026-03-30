@@ -265,6 +265,15 @@ export class SupabaseDB {
     if (error) throw new Error(error.message);
   }
 
+  async updateRegistrationStatus(playerId: string, seasonId: string, status: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('season_registrations')
+      .update({ registration_status: status })
+      .eq('player_id', playerId)
+      .eq('season_id', seasonId);
+    if (error) throw new Error(error.message);
+  }
+
   // ─── Teams ───────────────────────────────────────────────────────────────────
 
   async getTeams(seasonId: string): Promise<Team[]> {
