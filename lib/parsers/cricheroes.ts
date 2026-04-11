@@ -180,10 +180,10 @@ function makePageRenderer() {
         str: item.str,
       }));
 
-    // Group by Y with 3-unit tolerance
+    // Group by Y with 8-unit tolerance (PDF line height is ~12-14 pts; 8 keeps same-row items together)
     const rows: Array<{ y: number; items: typeof items }> = [];
     for (const item of items) {
-      const row = rows.find(r => Math.abs(r.y - item.y) <= 3);
+      const row = rows.find(r => Math.abs(r.y - item.y) <= 8);
       if (row) {
         row.items.push(item);
       } else {
@@ -205,8 +205,9 @@ function makePageRenderer() {
 
 // ── Parse innings header ──────────────────────────────────────────────────────
 
+// No ^ anchor — header may appear mid-line if page title and header share a Y group
 const INNINGS_HEADER_RE =
-  /^(.+?)\s+(\d+)\/(\d+)\s+\(([\d.]+)\s+Ov\)\s+\((\d+)(?:st|nd|rd|th)\s+Innings\)/i;
+  /\b([A-Z][A-Za-z\s]+?)\s+(\d+)\/(\d+)\s+\(([\d.]+)\s+Ov\)\s+\((\d+)(?:st|nd|rd|th)\s+Innings\)/i;
 
 // ── Main parser ───────────────────────────────────────────────────────────────
 
@@ -277,9 +278,9 @@ export async function parseCricHeroesPDF(buffer: Buffer): Promise<ParsedScorecar
     while (i < lines.length && !INNINGS_HEADER_RE.exec(lines[i])) {
       const line = lines[i];
 
-      // Section markers (CricHeroes table headers)
-      if (/^No\s+Batsman\b/i.test(line)) { section = 'batting'; i++; continue; }
-      if (/^No\s+Bowler\b/i.test(line)) { section = 'bowling'; i++; continue; }
+      // Section markers (CricHeroes table headers — no ^ so they match even if prefixed)
+      if (/\bNo\s+Batsman\b/i.test(line)) { section = 'batting'; i++; continue; }
+      if (/\bNo\s+Bowler\b/i.test(line)) { section = 'bowling'; i++; continue; }
       if (/^Fall of Wickets\b/i.test(line)) {
         section = 'fow';
         i++;
