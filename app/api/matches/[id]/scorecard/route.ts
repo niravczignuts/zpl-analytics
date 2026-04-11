@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
-import { parseScorecard, analyzeMatchScorecard } from '@/lib/ai';
+import { parseCricHeroesPDF } from '@/lib/parsers/cricheroes';
+import { analyzeMatch } from '@/lib/analysis/engine';
 import { createClient } from '@supabase/supabase-js';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -59,11 +60,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: { publicUrl } } = supabase.storage.from('scorecards').getPublicUrl(filename);
     const pdfUrl = publicUrl;
 
-    // Parse scorecard with Claude
-    const base64 = buffer.toString('base64');
+    // Parse scorecard
     let parsed: any;
     try {
-      parsed = await parseScorecard(base64);
+      parsed = await parseCricHeroesPDF(buffer);
     } catch (e: any) {
       return NextResponse.json({ error: `Scorecard parsing failed: ${e.message}` }, { status: 422 });
     }
@@ -144,10 +144,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (bowlingRows.length > 0) await db.saveMatchBowling(bowlingRows);
     }
 
-    // Run senior analyst AI analysis
+    // Run rule-based analysis
     let analysis = '';
     try {
-      analysis = await analyzeMatchScorecard({
+      analysis = analyzeMatch({
         scorecardData: parsed,
         matchInfo: {
           team_a: parsed.match_info?.team_a || (match as any).team_a_name || 'Team A',

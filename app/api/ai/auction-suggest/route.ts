@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
-import { getAuctionSuggestion } from '@/lib/ai';
+import { getAuctionSuggestion } from '@/lib/analysis/engine';
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     }));
 
     const budget = await db.getTeamBudget(team_id, season_id);
-    const suggestion = await getAuctionSuggestion({
+    const suggestion = getAuctionSuggestion({
       teamName: team.name,
       remainingBudget: budget.remaining,
       playersCount: budget.players_bought,

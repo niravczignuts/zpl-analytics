@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
-import { getTeamComparison } from '@/lib/ai';
+import { compareTeams } from '@/lib/analysis/engine';
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Team not found' }, { status: 404 });
     }
 
-    const comparison = await getTeamComparison({ team1, team2 });
+    const comparison = compareTeams({ team1, team2 });
     return NextResponse.json({ comparison });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
-import { getPlayerAnalysis } from '@/lib/ai';
+import { analyzePlayer } from '@/lib/analysis/engine';
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     if (!player) return NextResponse.json({ error: 'Player not found' }, { status: 404 });
 
     const allStats = await db.getPlayerStats(player_id);
-    const analysis = await getPlayerAnalysis({ player, allStats });
+    const analysis = analyzePlayer({ player, allStats });
     return NextResponse.json({ analysis });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

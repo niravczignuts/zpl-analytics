@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
-import { getMatchStrategy } from '@/lib/ai';
+import { getMatchStrategy } from '@/lib/analysis/engine';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Team not found' }, { status: 404 });
     }
 
-    const strategy = await getMatchStrategy({ yourTeam, opponentTeam });
+    const strategy = getMatchStrategy({ yourTeam, opponentTeam });
     return NextResponse.json({ strategy });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
