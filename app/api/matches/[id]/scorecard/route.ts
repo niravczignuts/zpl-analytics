@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
 import { parseScorecard, analyzeMatchScorecard } from '@/lib/ai';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
-import { existsSync } from 'fs';
+import { createClient } from '@supabase/supabase-js';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -46,13 +44,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'File too large (max 20MB)' }, { status: 400 });
     }
 
-    // Save PDF to disk
+    // Upload PDF to Supabase Storage
     const buffer = Buffer.from(await file.arrayBuffer());
-    const pdfDir = path.join(process.cwd(), 'public', 'scorecards');
-    if (!existsSync(pdfDir)) await mkdir(pdfDir, { recursive: true });
     const filename = `${matchId}.pdf`;
-    await writeFile(path.join(pdfDir, filename), buffer);
-    const pdfUrl = `/scorecards/${filename}`;
+    const supabase = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } }
+    );
+    const { error: uploadError } = await supabase.storage
+      .from('scorecards')
+      .upload(filename, buffer, { contentType: 'application/pdf', upsert: true });
+    if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+    const { data: { publicUrl } } = supabase.storage.from('scorecards').getPublicUrl(filename);
+    const pdfUrl = publicUrl;
 
     // Parse scorecard with Claude
     const base64 = buffer.toString('base64');
