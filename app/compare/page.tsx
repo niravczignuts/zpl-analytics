@@ -194,6 +194,7 @@ export default function ComparePage() {
   const [loading,      setLoading]      = useState(false);
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [generatedAt,  setGeneratedAt]  = useState('');
+  const [useAI,        setUseAI]        = useState(false);
 
   useEffect(() => {
     if (!currentSeasonId) return;
@@ -220,7 +221,7 @@ export default function ComparePage() {
     try {
       const res = await fetch('/api/ai/compare', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team1_id: team1Id, team2_id: team2Id, season_id: currentSeasonId }),
+        body: JSON.stringify({ team1_id: team1Id, team2_id: team2Id, season_id: currentSeasonId, useAI }),
       });
       const data = await res.json();
       setComparison(data.comparison || data.error || '');
@@ -360,12 +361,27 @@ export default function ComparePage() {
 
       {/* ── Generate CTA ── */}
       {team1 && team2 && (
-        <Button onClick={handleCompare} disabled={loading}
-          className="w-full h-13 bg-gradient-to-r from-[#FFD700] to-[#FFA500] hover:opacity-90 text-[#1B3A8C] font-black text-[15px] rounded-xl shadow-lg shadow-[#FFD700]/20 gap-3 py-3">
-          {loading
-            ? <><Loader2 className="w-5 h-5 animate-spin" /> Generating senior analyst report…</>
-            : <><Sparkles className="w-5 h-5" />{comparison ? 'Regenerate Analysis' : 'Generate AI Analysis'}<ChevronRight className="w-4 h-4 ml-auto" /></>}
-        </Button>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setUseAI(!useAI)}
+                className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${useAI ? 'bg-purple-600' : 'bg-muted'}`}
+              >
+                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${useAI ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
+              <span className={useAI ? 'text-purple-400' : 'text-muted-foreground'}>
+                {useAI ? '✦ AI' : 'Local Engine'}
+              </span>
+            </label>
+          </div>
+          <Button onClick={handleCompare} disabled={loading}
+            className="w-full h-13 bg-gradient-to-r from-[#FFD700] to-[#FFA500] hover:opacity-90 text-[#1B3A8C] font-black text-[15px] rounded-xl shadow-lg shadow-[#FFD700]/20 gap-3 py-3">
+            {loading
+              ? <><Loader2 className="w-5 h-5 animate-spin" /> Generating senior analyst report…</>
+              : <><Sparkles className="w-5 h-5" />{comparison ? 'Regenerate Analysis' : (useAI ? 'Generate AI Analysis' : 'Generate Analysis')}<ChevronRight className="w-4 h-4 ml-auto" /></>}
+          </Button>
+        </div>
       )}
 
       {/* ── Loading skeleton ── */}

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
 import { getPlayerBidRecommendation } from '@/lib/analysis/engine';
+import { queryZPLAI } from '@/lib/ai';
 
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { player_id, season_id } = body;
+    const { player_id, season_id, useAI = false } = body;
 
     if (!player_id || !season_id) {
       return NextResponse.json({ error: 'player_id and season_id required' }, { status: 400 });
@@ -48,6 +49,21 @@ export async function POST(req: NextRequest) {
         const b = await db.getTeamBudget(t.id, season_id);
         return { ...t, ...b };
       }));
+
+    if (useAI) {
+      const playerName = `${player.first_name} ${player.last_name}`;
+      const context = JSON.stringify({
+        player: { name: playerName, role: (player as any).player_role, gender: (player as any).gender },
+        stats: allStats,
+        ssTeam: { name: ssTeam.name, budget: ssBudget, squad: ssSquad?.players || [] },
+        marketPurchases: similarPurchases,
+      });
+      const aiText = await queryZPLAI({
+        context,
+        query: `Should Super Smashers bid on ${playerName}? Provide a bid recommendation with max bid price and reasoning.`,
+      });
+      return NextResponse.json({ recommendation: aiText, ss_team_name: ssTeam.name });
+    }
 
     const result = getPlayerBidRecommendation({
       player,

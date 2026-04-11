@@ -38,6 +38,7 @@ export default function PlayerProfilePage() {
   const [loading, setLoading] = useState(true);
   const [aiAnalysis, setAiAnalysis] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [useAI, setUseAI] = useState(false);
   const [newRemark, setNewRemark] = useState('');
   const [remarkType, setRemarkType] = useState('general');
   const [addingRemark, setAddingRemark] = useState(false);
@@ -113,7 +114,7 @@ export default function PlayerProfilePage() {
     try {
       const res = await fetch('/api/ai/player-analysis', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_id: id }),
+        body: JSON.stringify({ player_id: id, useAI }),
       });
       const contentType = res.headers.get('content-type') || '';
       const data = contentType.includes('application/json') ? await res.json() : null;
@@ -189,11 +190,26 @@ export default function PlayerProfilePage() {
             )}
           </div>
         </div>
-        <Button onClick={handleAIAnalysis} disabled={aiLoading}
-          className="bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/30 hover:bg-[#FFD700]/25">
-          {aiLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
-          AI Analysis
-        </Button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setUseAI(!useAI)}
+                className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${useAI ? 'bg-purple-600' : 'bg-muted'}`}
+              >
+                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${useAI ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
+              <span className={useAI ? 'text-purple-400' : 'text-muted-foreground'}>
+                {useAI ? '✦ AI' : 'Local Engine'}
+              </span>
+            </label>
+          </div>
+          <Button onClick={handleAIAnalysis} disabled={aiLoading}
+            className="bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/30 hover:bg-[#FFD700]/25">
+            {aiLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
+            {useAI ? 'AI Analysis' : 'Analyse Player'}
+          </Button>
+        </div>
       </div>
 
       {/* AI Analysis */}

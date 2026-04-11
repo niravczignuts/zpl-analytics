@@ -213,6 +213,7 @@ export default function AuctionPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
   const [aiError, setAiError] = useState('');
+  const [useAI, setUseAI] = useState(false);
 
   // Mobile tab state
   const [mobileTab, setMobileTab] = useState<'players' | 'auction' | 'ai'>('auction');
@@ -458,7 +459,7 @@ export default function AuctionPage() {
       const res = await fetch('/api/ai/auction-suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team_id: teamId, season_id: currentSeasonId }),
+        body: JSON.stringify({ team_id: teamId, season_id: currentSeasonId, useAI }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -512,7 +513,8 @@ export default function AuctionPage() {
     setBidAdvice(null);
     setBidAdviceError('');
     try {
-      const res = await fetch('/api/ai/bid-advice', {
+      const endpoint = useAI ? '/api/ai/bid-advice' : '/api/ai/player-bid';
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -526,11 +528,12 @@ export default function AuctionPage() {
             fielding: ownerData.fielding_stars,
           },
           owner_note: ownerData.owner_note,
+          useAI,
         }),
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || 'AI bid advice failed');
+        throw new Error(err.error || 'Bid advice failed');
       }
       setBidAdvice(await res.json());
     } catch (e: any) {
@@ -1016,7 +1019,7 @@ export default function AuctionPage() {
                     {bidAdviceLoading ? (
                       <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing player…</>
                     ) : (
-                      <><Sparkles className="w-3.5 h-3.5" /> AI: Should I bid on this player?</>
+                      <><Sparkles className="w-3.5 h-3.5" /> {useAI ? 'AI: Should I bid on this player?' : 'Should I bid on this player?'}</>
                     )}
                   </Button>
 
@@ -1456,6 +1459,20 @@ export default function AuctionPage() {
             </div>
           )}
 
+          <div className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setUseAI(!useAI)}
+                className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${useAI ? 'bg-purple-600' : 'bg-muted'}`}
+              >
+                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${useAI ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
+              <span className={useAI ? 'text-purple-400' : 'text-muted-foreground'}>
+                {useAI ? '✦ AI' : 'Local Engine'}
+              </span>
+            </label>
+          </div>
+
           <Button
             onClick={handleGetAiSuggestion}
             disabled={aiLoading || (!aiTeamId && !selectedTeamId)}
@@ -1464,7 +1481,7 @@ export default function AuctionPage() {
             {aiLoading ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing…</>
             ) : (
-              <><Sparkles className="w-4 h-4" /> Get AI Suggestion</>
+              <><Sparkles className="w-4 h-4" /> {useAI ? 'Get AI Suggestion' : 'Get Suggestion'}</>
             )}
           </Button>
 

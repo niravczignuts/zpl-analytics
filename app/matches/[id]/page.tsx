@@ -99,6 +99,7 @@ export default function MatchDetailPage() {
   const [uploadingScorecard, setUploadingScorecard] = useState(false);
   const [uploadError, setUploadError]         = useState('');
   const [uploadSuccess, setUploadSuccess]     = useState(false);
+  const [useAI, setUseAI]                     = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Result form state
@@ -204,6 +205,7 @@ export default function MatchDetailPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('useAI', useAI ? 'true' : 'false');
       const res = await fetch(`/api/matches/${id}/scorecard`, {
         method: 'POST',
         body: formData,
@@ -520,6 +522,21 @@ export default function MatchDetailPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* AI toggle */}
+          <div className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setUseAI(!useAI)}
+                className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${useAI ? 'bg-purple-600' : 'bg-muted'}`}
+              >
+                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${useAI ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
+              <span className={useAI ? 'text-purple-400' : 'text-muted-foreground'}>
+                {useAI ? '✦ AI' : 'Local Engine'}
+              </span>
+            </label>
+          </div>
+
           {/* Upload area */}
           <div
             className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-[#FFD700]/40 transition-colors"
@@ -545,7 +562,7 @@ export default function MatchDetailPage() {
             {uploadingScorecard ? (
               <div className="space-y-2">
                 <Loader2 className="w-8 h-8 mx-auto text-[#FFD700] animate-spin" />
-                <p className="text-sm text-muted-foreground">Parsing scorecard with AI…</p>
+                <p className="text-sm text-muted-foreground">{useAI ? 'Parsing scorecard with AI…' : 'Parsing scorecard…'}</p>
                 <p className="text-xs text-muted-foreground">This may take 20–40 seconds</p>
               </div>
             ) : (

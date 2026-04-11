@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
 import { getAuctionSuggestion } from '@/lib/analysis/engine';
+import { getAuctionSuggestion as getAuctionSuggestionAI } from '@/lib/ai';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { team_id, season_id } = body;
+    const { team_id, season_id, useAI = false } = body;
 
     if (!team_id || !season_id) {
       return NextResponse.json({ error: 'team_id and season_id required' }, { status: 400 });
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     }));
 
     const budget = await db.getTeamBudget(team_id, season_id);
-    const suggestion = getAuctionSuggestion({
+    const suggestionParams = {
       teamName: team.name,
       remainingBudget: budget.remaining,
       playersCount: budget.players_bought,
@@ -47,7 +48,10 @@ export async function POST(req: NextRequest) {
       currentSquad: team.players,
       availablePlayers: enrichedPlayers,
       otherTeams,
-    });
+    };
+    const suggestion = useAI
+      ? await getAuctionSuggestionAI(suggestionParams)
+      : getAuctionSuggestion(suggestionParams);
 
     return NextResponse.json(suggestion);
   } catch (e: any) {

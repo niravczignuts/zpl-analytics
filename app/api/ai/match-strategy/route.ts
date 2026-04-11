@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
 import { getMatchStrategy } from '@/lib/analysis/engine';
+import { getMatchStrategy as getMatchStrategyAI } from '@/lib/ai';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { team_id, opponent_id, season_id } = body;
+    const { team_id, opponent_id, season_id, useAI = false } = body;
 
     if (!team_id || !opponent_id || !season_id) {
       return NextResponse.json({ error: 'team_id, opponent_id, season_id required' }, { status: 400 });
@@ -19,7 +20,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Team not found' }, { status: 404 });
     }
 
-    const strategy = getMatchStrategy({ yourTeam, opponentTeam });
+    const strategy = useAI
+      ? await getMatchStrategyAI({ yourTeam, opponentTeam })
+      : getMatchStrategy({ yourTeam, opponentTeam });
     return NextResponse.json({ strategy });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

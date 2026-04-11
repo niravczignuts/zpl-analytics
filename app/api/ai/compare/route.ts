@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
 import { compareTeams } from '@/lib/analysis/engine';
+import { getTeamComparison } from '@/lib/ai';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { team1_id, team2_id, season_id } = body;
+    const { team1_id, team2_id, season_id, useAI = false } = body;
     if (!team1_id || !team2_id || !season_id) {
       return NextResponse.json({ error: 'team1_id, team2_id, season_id required' }, { status: 400 });
     }
@@ -18,7 +19,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Team not found' }, { status: 404 });
     }
 
-    const comparison = compareTeams({ team1, team2 });
+    const comparison = useAI
+      ? await getTeamComparison({ team1, team2 })
+      : compareTeams({ team1, team2 });
     return NextResponse.json({ comparison });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
 import { parseCricHeroesPDF } from '@/lib/parsers/cricheroes';
 import { analyzeMatch } from '@/lib/analysis/engine';
+import { parseScorecard, analyzeMatchScorecard } from '@/lib/ai';
 import { createClient } from '@supabase/supabase-js';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    const useAI = formData.get('useAI') === 'true';
 
     const allowedTypes = ['application/pdf'];
     if (!allowedTypes.includes(file.type) && !file.name.endsWith('.pdf')) {
@@ -63,7 +65,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Parse scorecard
     let parsed: any;
     try {
-      parsed = await parseCricHeroesPDF(buffer);
+      if (useAI) {
+        const pdfBase64 = buffer.toString('base64');
+        parsed = await parseScorecard(pdfBase64);
+      } else {
+        parsed = await parseCricHeroesPDF(buffer);
+      }
     } catch (e: any) {
       return NextResponse.json({ error: `Scorecard parsing failed: ${e.message}` }, { status: 422 });
     }
@@ -144,17 +151,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (bowlingRows.length > 0) await db.saveMatchBowling(bowlingRows);
     }
 
-    // Run rule-based analysis
+    // Run analysis (AI or rule-based)
     let analysis = '';
     try {
-      analysis = analyzeMatch({
-        scorecardData: parsed,
-        matchInfo: {
-          team_a: parsed.match_info?.team_a || (match as any).team_a_name || 'Team A',
-          team_b: parsed.match_info?.team_b || (match as any).team_b_name || 'Team B',
-          match_type: (match as any).match_type,
-        },
-      });
+      if (useAI) {
+        analysis = await analyzeMatchScorecard({
+          scorecardData: parsed,
+          matchInfo: {
+            team_a: parsed.match_info?.team_a || (match as any).team_a_name || 'Team A',
+            team_b: parsed.match_info?.team_b || (match as any).team_b_name || 'Team B',
+            match_type: (match as any).match_type,
+          },
+        });
+      } else {
+        analysis = analyzeMatch({
+          scorecardData: parsed,
+          matchInfo: {
+            team_a: parsed.match_info?.team_a || (match as any).team_a_name || 'Team A',
+            team_b: parsed.match_info?.team_b || (match as any).team_b_name || 'Team B',
+            match_type: (match as any).match_type,
+          },
+        });
+      }
     } catch (e: any) {
       analysis = `Analysis unavailable: ${e.message}`;
     }
