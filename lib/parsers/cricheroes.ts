@@ -277,9 +277,9 @@ export async function parseCricHeroesPDF(buffer: Buffer): Promise<ParsedScorecar
     while (i < lines.length && !INNINGS_HEADER_RE.exec(lines[i])) {
       const line = lines[i];
 
-      // Section markers
-      if (/^Batting\b/i.test(line)) { section = 'batting'; i++; continue; }
-      if (/^Bowling\b/i.test(line)) { section = 'bowling'; i++; continue; }
+      // Section markers (CricHeroes table headers)
+      if (/^No\s+Batsman\b/i.test(line)) { section = 'batting'; i++; continue; }
+      if (/^No\s+Bowler\b/i.test(line)) { section = 'bowling'; i++; continue; }
       if (/^Fall of Wickets\b/i.test(line)) {
         section = 'fow';
         i++;
